@@ -1,7 +1,13 @@
 import { defineConfig } from "vitest/config";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 const root = path.resolve(__dirname);
+
+// Per-machine test settings (gitignored), e.g. TEST_DATABASE_URL for a local Postgres
+// that isn't on 5433. Variables already set in the environment (CI, one-off overrides) win.
+const localEnv = path.join(root, ".env.test.local");
+if (existsSync(localEnv)) process.loadEnvFile(localEnv);
 
 export default defineConfig({
   resolve: {

@@ -21,7 +21,7 @@ npm run build          # prisma generate && next build
 npx prisma migrate deploy   # DIRECT_URL target. NEVER run against production without explicit approval
 ```
 
-Tests (`tests/`) rebuild a database named `*_test` from `prisma/migrations/*` on every run (`tests/global-setup.ts`). They refuse to touch any database whose name doesn't end in `_test`. Default URL: `postgresql://postgres@localhost:5433/msc_test`. Override with `TEST_DATABASE_URL`.
+Tests (`tests/`) rebuild a database named `*_test` from `prisma/migrations/*` on every run (`tests/global-setup.ts`). They refuse to touch any database whose name doesn't end in `_test`. Default URL: `postgresql://postgres@localhost:5433/msc_test`. Override with `TEST_DATABASE_URL`, either in the environment or in a gitignored `.env.test.local` (loaded by `vitest.config.ts`; an environment variable wins over the file).
 
 Scripts that import server modules need the react-server condition:
 `npx tsx --conditions=react-server scripts/<script>.ts`
