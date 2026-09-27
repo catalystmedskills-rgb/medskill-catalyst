@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  */
 export async function generateMetadata(): Promise<Metadata> {
   const cohort = await getPublicCohort();
-  const startsOn = cohort ? formatCohortDate(cohort.startDate) : "26 September 2026";
+  const startsOn = cohort ? formatCohortDate(cohort.startDate) : "14 November 2026";
   return {
     title: "MedTech Foundation Module | MedSkills Catalyst",
     description:

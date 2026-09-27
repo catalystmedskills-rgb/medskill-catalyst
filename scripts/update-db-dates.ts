@@ -12,17 +12,17 @@ async function main() {
 
   console.log("Connecting to the database...");
 
-  // Update all batches that are ENROLLING to start on 2026-09-26
+  // Update all batches that are ENROLLING to start on 2026-11-14
   const result = await db.batch.updateMany({
     where: {
       status: BatchStatus.ENROLLING,
     },
     data: {
-      start_date: new Date("2026-09-26"),
+      start_date: new Date("2026-11-14"),
     },
   });
 
-  console.log(`Successfully updated ${result.count} enrolling batches to start on September 26, 2026.`);
+  console.log(`Successfully updated ${result.count} enrolling batches to start on November 14, 2026.`);
 
   // Query and print out all batches in database to confirm
   const currentBatches = await db.batch.findMany({
