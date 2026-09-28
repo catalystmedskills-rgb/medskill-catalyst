@@ -12,6 +12,14 @@ export default function setup() {
   if (!dbName.endsWith("_test")) throw new Error(`Refusing to reset non-test database "${dbName}"`);
   const psql = (args: string[]) => execFileSync("psql", ["-q", "-v", "ON_ERROR_STOP=1", url, ...args], { stdio: ["ignore", "ignore", "inherit"], env: { ...process.env, PGOPTIONS: "-c client_min_messages=warning" } });
   psql(["-c", "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"]);
+  // Hosted Supabase supplies these roles; Prisma deploy supplies its ledger.
+  // The local test harness applies SQL directly, so provide those prerequisites.
+  psql(["-c", `DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon NOLOGIN; END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role NOLOGIN BYPASSRLS; END IF;
+  END $$;
+  CREATE TABLE public._prisma_migrations (id varchar(36) PRIMARY KEY);`]);
   const dir = path.resolve(__dirname, "../prisma/migrations");
   for (const m of readdirSync(dir).filter((d) => !d.endsWith(".toml")).sort()) {
     psql(["-f", path.join(dir, m, "migration.sql")]);

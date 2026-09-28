@@ -1,5 +1,7 @@
 # PRD acceptance matrix and security review
 
+Update 2026-09-27: the signed Foundation adaptation is packaged and verified locally; owner authorized Gagan's supplied signature. Final production activation remains pending. Tests now total 106, type-check/build pass, and full npm audit reports zero vulnerabilities. Framework/SheetJS findings and Clerk-mode legacy API bypasses listed in the historical review below have been fixed. See `RELEASE_READINESS_2026-09-27.md` for current evidence and live blockers; the deployment smoke test is still open.
+
 Evidence key: **T** automated test (`tests/`), **E2E** real browser against a production
 build (25 Sep 2026), **DB** enforced by database constraint/trigger.
 

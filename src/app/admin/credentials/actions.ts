@@ -24,7 +24,7 @@ import {
   retireTemplate,
   uploadTemplateAsset,
 } from "@/src/modules/credentials/templates";
-import { isValidProgramCode } from "@/src/modules/credentials/identifiers";
+import { isValidProgramCode, normalizeCertificateId } from "@/src/modules/credentials/identifiers";
 import { formatLongDate } from "@/src/modules/credentials/dates";
 
 function safeMessage(err: unknown): string {
@@ -156,8 +156,9 @@ export async function revokeAction(formData: FormData) {
   const id = idSchema.parse(formData.get("id"));
   try {
     const actor = await requirePermission(Permission.CredentialsRevoke, { individual: true });
-    if (formData.get("confirm") !== String(formData.get("certificateId"))) {
-      throw new CredentialError("Type the certificate ID exactly to confirm revocation.", "VALIDATION");
+    const typed = normalizeCertificateId(String(formData.get("confirm") ?? ""));
+    if (!typed || typed !== normalizeCertificateId(String(formData.get("certificateId") ?? ""))) {
+      throw new CredentialError("Type the certificate ID to confirm revocation.", "VALIDATION");
     }
     await revokeCredential(id, String(formData.get("reason") ?? ""), actor);
   } catch (err) {
@@ -325,17 +326,8 @@ export async function uploadTemplateAction(formData: FormData) {
     } catch {
       throw new CredentialError("Layout JSON is not valid JSON.", "VALIDATION");
     }
-    const resolve = (v: unknown): unknown => {
-      if (typeof v === "string" && v.startsWith("asset:")) {
-        const a = assets[v.slice(6)];
-        if (!a) throw new CredentialError(`Layout references ${v} but no file was uploaded in that slot.`, "VALIDATION");
-        return a;
-      }
-      if (Array.isArray(v)) return v.map(resolve);
-      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolve(x)]));
-      return v;
-    };
-    const resolved = resolve(layout) as { fieldConfig?: unknown; signatures?: unknown };
+    const { resolveTemplateAssets } = await import("@/src/modules/credentials/template-assets");
+    const resolved = resolveTemplateAssets(layout, assets) as { fieldConfig?: unknown; signatures?: unknown };
     await createTemplateVersion(
       {
         courseId,

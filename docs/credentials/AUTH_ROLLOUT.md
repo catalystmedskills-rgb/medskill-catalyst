@@ -48,8 +48,7 @@ credentials but can't issue, revoke, reissue or change templates. Existing CRM p
 ## 4. Rollout steps
 
 1. **Clerk dashboard (production instance):** create the application and enable the
-   sign-in methods. **Turn off public sign-ups** (restricted mode), or at minimum keep
-   them on. Access still depends on a staff row either way.
+   sign-in methods. **Turn off public sign-ups** (restricted mode). Access still depends on a staff row.
 2. **Vercel env (Production):** `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
    `NEXT_PUBLIC_CLERK_SIGN_IN_URL=/staff-sign-in`,
    `BOOTSTRAP_ADMIN_EMAILS=<your email>[,<Gagan's email>]`. Keep `ADMIN_AUTH_MODE` unset for now.
@@ -60,8 +59,7 @@ credentials but can't issue, revoke, reissue or change templates. Existing CRM p
    Admin → Staff, and have them sign in.
 5. **Cutover:** set `ADMIN_AUTH_MODE=clerk` on Production and redeploy. The bootstrap
    admin signs in first and adds the rest of the staff.
-6. After a week without issues, remove `BOOTSTRAP_ADMIN_EMAILS`. Rotate `ADMIN_PASSCODE`
-   as well: the passcode-gated APIs below still accept it.
+6. After a week without issues, remove `BOOTSTRAP_ADMIN_EMAILS`. Rotate `ADMIN_PASSCODE` as well; it is retained only for passcode-mode rollback.
 
 ## 5. How we avoid locking ourselves out
 
@@ -77,9 +75,6 @@ credentials but can't issue, revoke, reissue or change templates. Existing CRM p
 
 ## 6. Not changed in this work (decide separately)
 
-- `/api/careers/admin`, `/api/invoices*` and `/admin-legacy` still check the
-  `x-admin-passcode` header in **every** mode. Leaving them alone keeps existing tools
-  working, but the passcode stays a live credential until those routes move to
-  `requireStaff()`. Recommended as the next step after the cutover.
+- Updated 2026-09-27: `/api/careers/admin` and `/api/invoices*` now use `requireStaff()` in Clerk mode, require COUNSELOR/ACCOUNTS respectively, and reject shared passcodes. Cookie-authenticated writes require same-origin JSON. The old `/api/leads` feed returns 410 in Clerk mode; use `/admin/leads` and its authenticated export. Legacy passcode behavior remains only in passcode mode for rollback. Rehearse the legacy invoice UI with Clerk before cutover.
 - The existing leads/careers pages let VIEWER see lead PII (the old rank model). Worth
   reviewing once staff have real roles.

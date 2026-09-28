@@ -43,7 +43,7 @@ export default async function BulkPage({ searchParams }: { searchParams: Promise
                 File (.csv or .xlsx, up to {MAX_ROWS} rows)
                 <input name="file" type="file" required accept=".csv,text/csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="block w-full text-sm font-normal" />
               </label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="sendEmail" defaultChecked className="h-4 w-4 accent-brand-blue" /> Email each learner after their credential is issued</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="sendEmail" className="h-4 w-4 accent-brand-blue" /> Email each learner after their credential is issued</label>
               <button className={primaryBtn}>Upload and validate</button>
             </form>
           )}

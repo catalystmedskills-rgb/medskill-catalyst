@@ -2,6 +2,8 @@
 
 Nothing below has been done to production. Each item marked **[GATE]** needs your approval.
 
+Current evidence and blockers: see `RELEASE_READINESS_2026-09-27.md`. The signed Foundation package is ready for review, local checks pass, and dependencies are patched. The live Vercel project is accessible in the browser under `info-74073127`; the sibling's saved link is obsolete. Production credential/Clerk settings and an isolated Preview database are missing. The locally configured Supabase project is inactive, but its relationship to the live site remains unverified. Existing domain redirects point apex → www; verify the chosen canonical origin before changing redirects or issuing credentials.
+
 ## Environment variables
 
 | Variable | Where | Value / notes |
@@ -30,7 +32,7 @@ re-run (tested twice in a row).
 ## Before the first real credential
 
 1. **Program codes:** Admin → Credentials → Programs. Set codes for the real programs.
-   The dev seed used FND/ADV, but the final codes are your decision.
+   Done 2026-09-28: MedTech Immersion Program = FND (the only live program; Advanced deferred).
 2. **Approved artwork:** upload it as a new template version (Templates → Upload). Tick
    "production", preview it, then activate. The development template can't issue on
    production.
@@ -42,8 +44,7 @@ re-run (tested twice in a row).
    the other way.
 5. **Rate limiting:** add a Vercel Firewall rule, e.g. 60 req/min per IP on `/verify/*`
    and `/api/verify/*`, in front of the app-level limiter.
-6. Upgrade `next` to the latest 15.x patch (`npm audit` reports a critical advisory
-   against the installed 15.5.19). This is pre-existing and not caused by this work.
+6. Dependency hardening completed locally: Next.js 15.5.26, SheetJS removed, full npm audit reports zero vulnerabilities. Run CI on the release commit and review `RELEASE_READINESS_2026-09-27.md` before deployment.
 
 ## Production smoke test (after deploy) [GATE]
 

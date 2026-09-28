@@ -14,7 +14,7 @@ import { adminAuthMode, STAFF_SIGN_IN_PATH } from "@/src/lib/auth-mode";
  * server-side through requireStaff()/requirePermission().
  */
 
-const isAdminApi = createRouteMatcher(["/api/admin(.*)", "/api/credentials(.*)"]);
+const isAdminApi = createRouteMatcher(["/api/admin(.*)", "/api/credentials(.*)", "/api/invoices(.*)", "/api/careers/admin"]);
 const isAdminPage = createRouteMatcher(["/admin(.*)"]);
 
 let clerkHandler: NextMiddleware | null = null;
@@ -53,6 +53,9 @@ export const config = {
     "/admin/:path*",
     "/api/admin/:path*",
     "/api/credentials/:path*",
+    "/api/invoices",
+    "/api/invoices/:path*",
+    "/api/careers/admin",
     "/staff-sign-in/:path*",
     "/staff-sign-in",
   ],

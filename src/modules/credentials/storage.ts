@@ -67,21 +67,20 @@ export class LocalStorage implements CredentialStorage {
 
 // ── Supabase Storage (private bucket) ──
 export class SupabaseStorage implements CredentialStorage {
-  private ready = false;
-
   private async client() {
     const { supabaseAdmin } = await import("@/src/lib/supabase");
     const admin = supabaseAdmin();
-    if (!this.ready) {
-      const { data } = await admin.storage.getBucket(CREDENTIAL_BUCKET);
-      if (!data) {
-        const { error } = await admin.storage.createBucket(CREDENTIAL_BUCKET, { public: false, fileSizeLimit: "20MB" });
-        if (error && !/already exists/i.test(error.message)) throw error;
-      } else if (data.public) {
-        // Fail closed: certificate files must never sit in a public bucket.
-        throw new Error(`Storage bucket "${CREDENTIAL_BUCKET}" is public; make it private.`);
-      }
-      this.ready = true;
+    let bucket = await admin.storage.getBucket(CREDENTIAL_BUCKET);
+    if (bucket.error) {
+      const status = "statusCode" in bucket.error ? String(bucket.error.statusCode) : "";
+      if (status !== "404") throw new Error("Cannot verify credential bucket privacy.");
+      const { error } = await admin.storage.createBucket(CREDENTIAL_BUCKET, { public: false, fileSizeLimit: "20MB" });
+      if (error && !/already exists/i.test(error.message)) throw new Error("Cannot create private credential bucket.");
+      // Another worker may have created the bucket. Never assume it is private.
+      bucket = await admin.storage.getBucket(CREDENTIAL_BUCKET);
+    }
+    if (bucket.error || !bucket.data || bucket.data.public !== false) {
+      throw new Error("Credential storage requires a verified private bucket.");
     }
     return admin;
   }

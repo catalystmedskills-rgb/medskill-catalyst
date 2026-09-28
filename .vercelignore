@@ -1,0 +1,13 @@
+.env*
+.data/
+.agents/
+.claude/
+.gemini/
+output/
+_MARKETING/
+docs/
+tests/
+supabase/.temp/
+tsconfig.tsbuildinfo
+*.backup
+*.backup.gz

@@ -93,10 +93,22 @@ production build (screenshots in the session). See ACCEPTANCE_AND_SECURITY.md.
 
 ## Remaining work / TBD
 
-1. **Final certificate artwork**, then upload it as a production template version with
-   its field layout. Bring the TTF brand fonts for full Unicode names; the dev template's
-   standard fonts can't print non-Latin scripts and block issuance for those names.
-2. Program codes for real programs (FND/ADV are only in the local seed).
+### Release hardening and signed template, 2026-09-27
+
+Gagan Victor's supplied signature is integrated in asset4; the owner confirmed Gagan's authorization. Fixed the two upload tests to include the signature and updated the package README. All 106 tests, type-check and production build pass. Full npm audit reports zero vulnerabilities after framework/dependency updates and SheetJS removal. Both signed specimens were visually inspected and their QR codes decoded at 150 dpi. Local production-server smoke checks passed: verification page 200, invalid token 404 with noindex/no-store, unauthenticated issuance/export 401.
+
+Added private-storage race/error checks, custom-font glyph validation, Clerk-mode legacy API authorization, formula-safe exports, CI and a read-only preflight script. Bundled licensed website fonts after a clean build exposed a Google Fonts loader failure; type-check and build pass with local fonts. See `RELEASE_READINESS_2026-09-27.md` for exact changes, current evidence and remaining live blockers. That document supersedes older pending-artwork/security notes below. Browser inspection identified the actual live Vercel project under `info-74073127`, differing from the stale sibling project link. Credential/Clerk settings and a Preview database are missing; the locally configured Supabase project is inactive, with live database identity still unverified. Live verification returns 404. No remote changes or real issuance were performed.
+
+### Continuation, 2026-09-27
+
+The owner selected adaptation of the existing Foundation design. The upload package is now in `assets/credentials/foundation-v1/` (background PDF, layout JSON, three font files and instructions), with labelled short/long-name previews in `output/pdf/`. Rebuild with `npx tsx scripts/build-foundation-template.ts`. It keeps the renderer generic and uses its real QR; the source design's decorative QR and cursive simulated signature are not carried over. Authentic signature artwork and final signatory/program-code decisions are still pending. Nothing has been uploaded, activated or deployed.
+
+Fixed upload-slot resolution for custom font references: resolve the flat font path/digest from uploaded metadata rather than nesting an asset object inside `path`. Image shorthand remains compatible. Regression tests cover real Foundation package parsing, missing slots and invalid font MIME types.
+
+Validation on 2026-09-27: type-check and production build passed; 91 tests passed (7 files). Both specimen PDFs were visually reviewed, and their QR codes decoded to the exact preview URL after rasterization at 150 dpi. Build still reports the pre-existing missing `metadataBase` warning. No live upload/activation or production smoke test was performed.
+
+1. Review the adapted Foundation package and supply any required authentic signature, then upload/approve it as a new production template version. Additional script coverage needs suitable fonts and verification.
+2. Program codes: done 2026-09-28. Program decision (owner, 2026-09-28): one live program, **MedTech Immersion Program** (slug `foundation-program`, code **FND**, ₹25,000 + 18% GST = ₹29,500, 6 weeks, online). Created in the new Supabase project `uhavtfhfebwwamltlmmq`. The Advanced Module is deferred; no ADV course or code exists. FND can still be changed (e.g. to IMM) before the first certificate is issued.
 3. Approval gates: Clerk cutover, production migration, `live` email, www→apex, SPF/DKIM
    check, deploy.
 4. Recommended: upgrade `next`, replace `xlsx`, move the passcode-gated legacy APIs to

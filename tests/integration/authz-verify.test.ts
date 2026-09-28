@@ -30,6 +30,9 @@ import { POST as revokeRoute } from "@/src/app/api/credentials/[id]/revoke/route
 import { GET as detailRoute } from "@/src/app/api/credentials/[id]/route";
 import { GET as publicVerifyRoute } from "@/src/app/api/verify/[token]/route";
 import { POST as publicSearchRoute } from "@/src/app/api/verify/search/route";
+import { GET as invoiceList } from "@/src/app/api/invoices/route";
+import { GET as careersList } from "@/src/app/api/careers/admin/route";
+import { denyLegacyClerkAuth } from "@/src/lib/legacy-clerk-auth";
 
 const env = { ...process.env };
 afterEach(() => {
@@ -60,6 +63,30 @@ beforeAll(async () => {
 });
 
 describe("server-side authorization", () => {
+  it("legacy routes refuse shared passcodes in Clerk mode", async () => {
+    process.env.ADMIN_AUTH_MODE = "clerk";
+    process.env.ADMIN_PASSCODE = "test-passcode";
+    const req = new Request("http://localhost:3000/api/invoices", { headers: { "x-admin-passcode": "test-passcode" } });
+    expect((await invoiceList(req)).status).toBe(401);
+    expect((await careersList(req)).status).toBe(401);
+  });
+
+  it("credential issuers cannot use invoice or careers APIs", async () => {
+    const issuer = await staff("ISSUER");
+    process.env.ADMIN_AUTH_MODE = "clerk";
+    clerk.userId = issuer.clerk_user_id;
+    const req = new Request("http://localhost:3000/api/invoices");
+    expect((await invoiceList(req)).status).toBe(403);
+    expect((await careersList(req)).status).toBe(403);
+  });
+
+  it("authorized legacy writes still require a same-origin JSON request", async () => {
+    const admin = await staff("ADMIN");
+    process.env.ADMIN_AUTH_MODE = "clerk";
+    clerk.userId = admin.clerk_user_id;
+    expect(await denyLegacyClerkAuth(json({}), "ACCOUNTS")).toBeNull();
+    expect((await denyLegacyClerkAuth(json({}, { origin: "https://evil.example" }), "ACCOUNTS"))?.status).toBe(403);
+  });
   it("VIEWER cannot issue; ISSUER can; ACCOUNTS cannot revoke; ADMIN can", async () => {
     const viewer = await staff("VIEWER");
     const issuer = await staff("ISSUER");

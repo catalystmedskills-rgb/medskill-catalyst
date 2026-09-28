@@ -182,7 +182,7 @@ export default async function CredentialDetail({ params, searchParams }: { param
                   <span className="font-semibold text-brand-navy">Reason for reissue (internal)</span>
                   <textarea name="reason" required minLength={5} maxLength={1000} rows={2} className="w-full rounded-msc border border-brand-navy/15 p-3 text-sm" />
                 </label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="sendEmail" defaultChecked className="h-4 w-4 accent-brand-blue" /> Email the learner the new credential</label>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="sendEmail" className="h-4 w-4 accent-brand-blue" /> Email the learner the new credential</label>
                 <button className={primaryBtn}>Reissue</button>
               </form>
             </details>

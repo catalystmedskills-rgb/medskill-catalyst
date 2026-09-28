@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import * as XLSX from "xlsx";
-import { getStaff } from "@/src/lib/auth";
+import ExcelJS from "exceljs";
+import { AuthError, requireStaff } from "@/src/lib/auth";
+import { safeSpreadsheetCell } from "@/src/lib/spreadsheet-export";
 import { db } from "@/src/lib/db";
 import type { Prisma } from "@/src/generated/prisma/client";
 import { LeadStatus, LeadSource } from "@/src/generated/prisma/enums";
@@ -15,9 +16,11 @@ const HEADERS = [
 ];
 
 export async function GET(req: NextRequest) {
-  // Passcode session gate (same as the admin pages).
-  if (!(await getStaff())) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    await requireStaff("COUNSELOR");
+  } catch (error) {
+    if (error instanceof AuthError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: "Staff authentication unavailable" }, { status: 503 });
   }
 
   const sp = req.nextUrl.searchParams;
@@ -64,16 +67,17 @@ export async function GET(req: NextRequest) {
   const stamp = new Date().toISOString().slice(0, 10);
 
   if (format === "xlsx") {
-    const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...rows]);
-    ws["!cols"] = HEADERS.map((h, i) => ({
-      wch: Math.min(40, Math.max(h.length, ...rows.map((r) => String(r[i] ?? "").length)) + 2),
-    }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Leads");
-    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Leads");
+    ws.addRows([HEADERS, ...rows.map((row) => row.map(safeSpreadsheetCell))]);
+    ws.columns.forEach((column, i) => {
+      column.width = Math.min(40, rows.reduce((width, row) => Math.max(width, String(row[i] ?? "").length), HEADERS[i].length) + 2);
+    });
+    const buf = await wb.xlsx.writeBuffer();
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Cache-Control": "private, no-store",
         "Content-Disposition": `attachment; filename="medskills-leads-${stamp}.xlsx"`,
       },
     });
@@ -81,13 +85,14 @@ export async function GET(req: NextRequest) {
 
   // CSV (with BOM so Excel opens UTF-8 correctly)
   const esc = (v: unknown) => {
-    const s = v == null ? "" : String(v);
+    const s = safeSpreadsheetCell(v);
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const csv = "﻿" + [HEADERS, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
+      "Cache-Control": "private, no-store",
       "Content-Disposition": `attachment; filename="medskills-leads-${stamp}.csv"`,
     },
   });

@@ -1,5 +1,6 @@
 import "server-only";
-import { timingSafeEqual } from "node:crypto";
+import { passcodesMatch } from "./passcode-comparison";
+export { passcodesMatch } from "./passcode-comparison";
 
 /**
  * Shared admin-passcode check for the passcode-gated API routes
@@ -12,17 +13,6 @@ import { timingSafeEqual } from "node:crypto";
  *     passcode in a URL ends up in server/CDN access logs, browser history and
  *     the Referer header. Callers must send it in the `x-admin-passcode` header.
  */
-
-/** Constant-time string equality. False if either side is missing or lengths differ. */
-export function passcodesMatch(
-  given: string | null | undefined,
-  expected: string | null | undefined,
-): boolean {
-  if (!given || !expected) return false;
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 /** True when this deployment actually has a passcode to check against. */
 export function adminPasscodeConfigured(): boolean {

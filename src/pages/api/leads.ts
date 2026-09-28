@@ -1,5 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { passcodesMatch } from "@/lib/admin-auth";
+import { passcodesMatch } from "@/lib/passcode-comparison";
+import { adminAuthMode } from "@/src/lib/auth-mode";
+import { safeSpreadsheetCell } from "@/src/lib/spreadsheet-export";
 
 /**
  * Read-only leads feed for the admin dashboard.
@@ -18,7 +20,7 @@ const COLUMNS = [
 ] as const;
 
 function csvEscape(v: unknown): string {
-  const s = v === null || v === undefined ? "" : String(v);
+  const s = safeSpreadsheetCell(v);
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
@@ -26,6 +28,10 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  res.setHeader("Cache-Control", "private, no-store");
+  if (adminAuthMode() === "clerk") {
+    return res.status(410).json({ error: "Use the authenticated CRM leads page and export." });
+  }
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
   }

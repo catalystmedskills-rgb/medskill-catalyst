@@ -82,6 +82,12 @@ type Layout = { lines: string[]; size: number; font: PDFFont; box: TextBox };
 async function layout(fonts: FontCache, box: TextBox, text: string, field: FieldKey | "template"): Promise<Layout | PreflightIssue> {
   const font = await fonts.get(box.font);
   const full = box.prefix + text;
+  // Custom fonts can silently map unsupported code points to .notdef rather
+  // than throwing from encodeText. Block issuance instead of printing boxes.
+  const supported = new Set(font.getCharacterSet());
+  if ([...full].some((character) => !/\s/.test(character) && !supported.has(character.codePointAt(0)!))) {
+    return { field, message: "contains characters the template font cannot print" };
+  }
   try {
     font.encodeText(full); // standard fonts only cover WinAnsi; catch unsupported characters early
   } catch {

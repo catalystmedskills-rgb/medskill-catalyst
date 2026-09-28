@@ -45,3 +45,6 @@ src/generated/
 
 # credential system local data
 /.data/
+
+# generated specimens (rebuild: npx tsx scripts/build-foundation-template.ts)
+/output/

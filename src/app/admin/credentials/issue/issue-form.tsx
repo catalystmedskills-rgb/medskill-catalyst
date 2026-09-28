@@ -86,7 +86,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
             <input id="completionDate" name="completionDate" type="date" required max={today} className={input} />
           </div>
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-ink">
-            <input type="checkbox" name="sendEmail" defaultChecked className="h-4 w-4 accent-brand-blue" />
+            <input type="checkbox" name="sendEmail" className="h-4 w-4 accent-brand-blue" />
             Email the learner after issuing
           </label>
         </div>

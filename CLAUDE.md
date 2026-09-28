@@ -35,7 +35,7 @@ The source of truth is the PRD plus the docs in `docs/credentials/`. **Read thes
 - `docs/credentials/DEPLOYMENT_CHECKLIST.md`: env vars, migration, smoke test
 - `docs/credentials/ACCEPTANCE_AND_SECURITY.md`: PRD acceptance matrix and security review
 
-Status: MVP complete except the **final certificate artwork** (a development template is in use). 87 tests pass and the production build passes. Nothing is deployed, migrated or emailed.
+Status: hardened release candidate; Foundation package includes Gagan Victor's authorized signature in asset4. 106 tests pass, type-check/build pass and npm audit reports zero vulnerabilities. See `docs/credentials/RELEASE_READINESS_2026-09-27.md` for live blockers and rollout. Nothing is deployed, migrated or emailed.
 
 Where things live:
 
@@ -67,10 +67,10 @@ Production deploy · applying migrations to production · switching `ADMIN_AUTH_
 
 ### Next tasks (in order)
 
-1. **Integrate the final certificate artwork** when it's supplied: upload it as a new template version (Admin → Credentials → Templates) with field boxes, QR box and per-template signatures. Brand TTF fonts are needed for Unicode names. Don't change the render engine to suit one design. Only the configuration should change.
-2. Set real program codes (the owner decides these; FND/ADV exist only in the local seed).
+1. Review/upload `assets/credentials/foundation-v1/` as a new template version (instructions in its README). Gagan's signature use is authorized and its PNG must be uploaded as asset4. The builder uses the generic renderer and real QR. Check font coverage for non-Latin names.
+2. Done 2026-09-28. Program decision (owner, 2026-09-28): one live program, **MedTech Immersion Program** (slug `foundation-program`, code **FND**, ₹25,000 + 18% GST = ₹29,500, 6 weeks, online). Created in the new Supabase project `uhavtfhfebwwamltlmmq`. The Advanced Module is deferred; no ADV course or code exists. FND can still be changed (e.g. to IMM) before the first certificate is issued.
 3. After approval: Clerk cutover (follow `AUTH_ROLLOUT.md` exactly), production migration, smoke test.
-4. Recommended hardening: upgrade `next` (critical advisory on 15.5.19), replace `xlsx@0.18.5` (used by the leads export), move the passcode-gated legacy APIs (`/api/careers/admin`, `/api/invoices*`) to `requireStaff`, and add a Vercel Firewall rate-limit rule on `/verify*`.
+4. Hardening: done in code on 2026-09-27 (`next` 15.5.26, SheetJS replaced by ExcelJS with formula neutralisation, the legacy `/api/careers/admin` and `/api/invoices*` routes require `requireStaff` in Clerk mode; `npm audit --omit=dev` reports 0). Still open, needs owner approval as it is remote infrastructure: a Vercel Firewall rate-limit rule on `/verify*`.
 
 ## Working style the owner expects
 

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { adminAuthMode } from "@/src/lib/auth-mode";
+import { denyLegacyClerkAuth } from "@/src/lib/legacy-clerk-auth";
 import { getServiceClient, signCareersFile } from "@/lib/supabase";
 import {
   ADMIN_NOT_CONFIGURED_MESSAGE,
@@ -20,6 +22,7 @@ export const runtime = "nodejs";
 // only when it has one and the caller got it wrong. Collapsing both into a
 // 401 makes a misconfigured deployment indistinguishable from a bad passcode.
 async function denyAuth(request: Request): Promise<NextResponse | null> {
+  if (adminAuthMode() === "clerk") return denyLegacyClerkAuth(request, "COUNSELOR");
   if (!adminPasscodeConfigured()) {
     return NextResponse.json({ error: ADMIN_NOT_CONFIGURED_MESSAGE }, { status: 503 });
   }
