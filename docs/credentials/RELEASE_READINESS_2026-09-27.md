@@ -120,6 +120,18 @@ Preview deployment 2026-09-28: PASS (read-only). The GitHub push of `feat/creden
 
 Not testable yet: Clerk sign-in (no dev keys), template upload/issuance (needs individual identity; passcode admin is shared and cannot issue), private-bucket creation (first upload creates it).
 
+### Continuation after Codex handoff — 2026-09-28 (owner-approved)
+
+State inherited from the Codex session (read from its log, verified live): certificate release in production since 07:50 IST; Clerk production instance `ins_3JwB2sUNgG8rCLOPhoUm6xS0LKr` with DNS, SSL and mail **complete** (only Google OAuth pending; staff use email/password); Production has Clerk live keys, sign-in URL and `BOOTSTRAP_ADMIN_EMAILS`; ADMIN staff `info@` and `admin@medskillscatalyst.com` linked to Clerk; manual production backup `.data/production-backups/public-2026-09-28.dump` (pg_dump, public schema) test-restored locally with 79 leads; Vercel project left **disconnected** from Git.
+
+| Step | Status | Evidence |
+|---|---|---|
+| Clerk cutover (owner approved) | PASS | `ADMIN_AUTH_MODE=clerk` (Production) and live build redeployed: `medskill-catalyst-jk3kbylpi`, aliased to www. `/admin*` returns 307 to `/staff-sign-in`, which loads `clerk.medskillscatalyst.com` with a `pk_live_` key; `/verify` 200; legacy `/api/leads` 410 (by design); CRM export 401. Rollback: remove `ADMIN_AUTH_MODE` and redeploy. |
+| Real staff sign-in | PENDING owner | Claude does not type passwords. Owner signs in at `/staff-sign-in` (info@; password in `.env.staff-admin.local`). |
+| Foundation v1 template | PENDING sign-in | `scripts/upload-foundation-template.ts` (same service calls as the admin form, draft only) cannot run locally: no service-role key locally, the Supabase CLI is not logged in, and Vercel secrets cannot be pulled. Upload goes through the admin UI after owner sign-in; preview PDF to owner before activation. |
+| GitHub reconnection | BLOCKED | Vercel shows "not connected to a Git repository"; only the `imareebkhan-design` scope is installed. Adding the `catalystmedskills-rgb` scope needs the GitHub app install page, and the browser extension has no permission on github.com. |
+| Foundation cohort | Owner decision | 0 batches; the backup's cohort (26 Sep, 20 seats) is in the past. |
+
 Regression after changes: type-check PASS; 106/106 tests PASS (10 files). Code unchanged in this pass; only Vercel env and this document changed.
 
 ## Rollout still required
