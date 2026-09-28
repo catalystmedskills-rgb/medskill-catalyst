@@ -107,6 +107,19 @@ Owner decisions 2026-09-28 and follow-up:
 - **Website leads outage (found 2026-09-28).** Live `main` (0d42006) saves leads through Supabase REST using `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (`src/pages/api/register.ts:39-40`, `src/app/api/qa-register`), not `DATABASE_URL`. Production still targets the old project, whose API does not respond (HTTP 000, paused); new form submissions are not being stored. The newest lead in the new DB is 2026-08-31 16:13 UTC; anything after that was never captured or was lost while paused. The new project is the owner's business account (owner, 2026-09-28) and is compatible: all written columns exist, the `leads_email_key` unique index supports the email upsert, and required columns have defaults. Fix = run `scripts/switch-vercel-db.sh` (it now also proves the key can read `/rest/v1/leads`), then **redeploy the current production build** (same `main` code, new env), not the credentials branch.
 - Preview uses the production database: preview smoke tests are read-only plus Clerk sign-in; **do not issue certificates on preview** (rows cannot be deleted).
 
+Preview deployment 2026-09-28: PASS (read-only). The GitHub push of `feat/credentials` (8f5b2f5) did not trigger a Vercel build: the repo moved to `catalystmedskills-rgb/medskill-catalyst`, so check the project's Git connection. Deployed from the checkout via CLI with target preview (author `imareebkhan@gmail.com`; no identity block): `medskill-catalyst-mw4uhh60d-info-74073127.vercel.app`, READY. Preview `DATABASE_URL` added (new project, transaction pooler 6543, connectivity verified), so preview reads the **production** database; no issuance on preview.
+
+| Check (preview) | Result |
+|---|---|
+| `/verify/<unknown token>` | 200, "Credential not found", `no-store`, `noindex, nofollow` |
+| `/api/verify/<unknown>` and `?id=<unknown>` | 404, `no-store`, `noindex` |
+| `/admin/credentials` logged out | Passcode sign-in screen, no form |
+| Unauthenticated `POST /api/credentials` | 401 |
+| `/api/leads` (crashed with 500 on the live build) | 401 (fixed) |
+| `/foundation` | **404**: page needs a `batches` row; the new DB has 0 batches (cohorts not restored). Enrollment funnel, not certificates. Owner to supply cohort data or restore batches from the old backup |
+
+Not testable yet: Clerk sign-in (no dev keys), template upload/issuance (needs individual identity; passcode admin is shared and cannot issue), private-bucket creation (first upload creates it).
+
 Regression after changes: type-check PASS; 106/106 tests PASS (10 files). Code unchanged in this pass; only Vercel env and this document changed.
 
 ## Rollout still required
