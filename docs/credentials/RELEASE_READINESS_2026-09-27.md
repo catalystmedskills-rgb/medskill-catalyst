@@ -132,6 +132,27 @@ State inherited from the Codex session (read from its log, verified live): certi
 | GitHub reconnection | BLOCKED | Vercel shows "not connected to a Git repository"; only the `imareebkhan-design` scope is installed. Adding the `catalystmedskills-rgb` scope needs the GitHub app install page, and the browser extension has no permission on github.com. |
 | Foundation cohort | Owner decision | 0 batches; the backup's cohort (26 Sep, 20 seats) is in the past. |
 
+### "MedTech Immersion Program (no active template)" — diagnosis 2026-09-28
+
+Issue: the owner, signed in on production, sees the program disabled on `/admin/credentials/issue`. Root cause: production `certificate_templates` has **0 rows** (no draft, no active version, no TEMPLATE_* audit entries). The rehearsed and approved template (v2 "Foundation design v1 (rehearsal)", ACTIVE) exists only in the local disposable `msc_rehearsal` database; it was never uploaded to production. The course is correct: `foundation-program`, code FND, active. Nothing is misconfigured and nothing is linked to the wrong template.
+
+Design identity check (read-only): the committed package `assets/credentials/foundation-v1` is byte-identical to the rehearsal-approved v2. SHA-256 of background.pdf `10358b53…`, CormorantGaramond-600 `d8d55ecc…`, InstrumentSans-400 `01689ad0…`, InstrumentSans-600 `5e39a358…` and signature-gagan-victor.png `d2949928…` all match the v2 references, and `layout.json` field and signature layout is structurally identical once asset references are normalized. Fix = upload this exact package to production as a new version (it becomes v1 there), verify the production preview, then activate. No new design and no substitution.
+
+Other issuance gates re-checked live: 7/7 migrations finished and not rolled back; RLS on all public tables; 4/4 lifecycle guards enabled; `/verify` 200; unknown-ID API 404; Resend domain verified and sending enabled; Production env has Clerk keys, `ADMIN_AUTH_MODE`, `BOOTSTRAP_ADMIN_EMAILS`, `CREDENTIAL_PUBLIC_BASE_URL` (www), `CREDENTIAL_EMAIL_MODE` (off), `RESEND_API_KEY`, `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (proven by live lead capture), `DIRECT_URL`; no `DEV_AUTH_ENABLE` or `CREDENTIAL_STORAGE` override. Storage bucket `credentials` is created privately on the first upload. Cosmetic: the Clerk sign-in card says "Sign in to My Application"; rename the Clerk application to "MedSkills Catalyst".
+
+Fix applied 2026-09-28 through the live admin UI, signed in as info@ (Clerk, individual ADMIN):
+
+| Step | Status | Evidence |
+|---|---|---|
+| Upload approved package as draft | PASS | Templates → "Upload approved artwork": background.pdf, asset1–4 (Cormorant 600, Instrument Sans 400/600, Gagan signature), `layout.json`, "approved production artwork" ticked. Result `?ok=uploaded`; row v1 "Foundation design v1", DRAFT, is_production=true (id `857f6143-ffd3-4e98-a880-a8474c7624be`). Audit: 5 × TEMPLATE_ASSET_UPLOADED, 1 × TEMPLATE_CREATED. |
+| Private storage | PASS | The first upload created bucket `credentials` with public=false. |
+| Draft equals the approved design | PASS | Production row compared with rehearsal v2 (storage paths ignored): background and font/signature hashes, field boxes, QR box and signature block are identical. |
+| Production preview | PASS | `/api/admin/credentials/templates/<id>/preview`: 200, application/pdf, `private, no-store`, 258,755 bytes. Visual check: logo, title, ribbon/seal, long sample name on one line, program "MedTech Immersion Program", completion/issue dates, Gagan Victor signature and "Academic Director, MedSkills Catalyst", ID `MSC-2026-FND-……`, verify link on www. QR decoded (jsQR) = `https://www.medskillscatalyst.com/verify/PREVIEWxxxxxxxxxxxxxxx`. |
+| Activate | PASS | Activate on v1: `?ok=activated`; table shows "v1 Foundation design v1 active Yes". The only template, so nothing was retired or substituted. |
+| Issue screen | PASS | `/admin/credentials/issue` lists "MedTech Immersion Program" as a selectable option (no "no active template"); fields: name, email, program, cohort (No cohort), completion date; "Email the learner after issuing" **unticked** by default. |
+| Review step | PENDING owner | Not completed by Claude: its browser automation of the Issue form was stopped by the permission policy. Owner clicks Review with a specimen name to confirm the rendered print preview; nothing is issued until confirmed. |
+| Rehearsal data isolation | PASS | Production contains only the v1 template, 0 credentials, 2 ADMIN staff and the 79 leads; nothing from `msc_rehearsal` was copied (the package was uploaded from the committed files). |
+
 Regression after changes: type-check PASS; 106/106 tests PASS (10 files). Code unchanged in this pass; only Vercel env and this document changed.
 
 ## Rollout still required
