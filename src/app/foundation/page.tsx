@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "MedTech Foundation Module | MedSkills Catalyst",
   description:
-    "Break into the MedTech industry. Master commercial competency, clinical confidence, and MedTech recruitment frameworks. Next cohort starting 26 September 2026.",
+    "Break into the MedTech industry. Master commercial competency, clinical confidence, and MedTech recruitment frameworks. Next cohort starting 14 November 2026.",
 };
 
 export default async function FoundationLandingPage() {

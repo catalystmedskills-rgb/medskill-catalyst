@@ -114,7 +114,7 @@ export function FoundationLandingClient({ data }: { data: any }) {
 
       {/* ── Urgent Top Notification Banner ── */}
       <div className="bg-brand-blue/10 border-b border-brand-blue/10 text-center py-2.5 px-4 text-xs font-semibold text-brand-navy relative z-20">
-        ⚡ Orientation starting 26 September 2026. Only a few seats remaining for the upcoming cohort.
+        ⚡ Orientation starting 14 November 2026. Only a few seats remaining for the upcoming cohort.
       </div>
 
       {/* ── 1. Hero Section ── */}
@@ -592,7 +592,7 @@ export function FoundationLandingClient({ data }: { data: any }) {
                   EMI availability depends on your payment method and your bank. If you pay with a supported credit card, your bank may offer EMI, with the tenure, interest, and eligibility decided entirely by them. You can check the available options at checkout or with your bank.
                 </AccordionItem>
                 <AccordionItem question="When does the next cohort start, and how many seats are available?">
-                  The next cohort begins on 26 September 2026. We keep each batch deliberately small to protect the quality of mentorship, so seats are limited and registration closes once they are filled.
+                  The next cohort begins on 14 November 2026. We keep each batch deliberately small to protect the quality of mentorship, so seats are limited and registration closes once they are filled.
                 </AccordionItem>
                 <AccordionItem question="What is your refund policy?">
                   Because you receive immediate access to our learning resources, mentorship, and community, programme fees are non-refundable. We encourage you to review the programme details and speak with our team on your counselling call so you can enrol with full confidence.
