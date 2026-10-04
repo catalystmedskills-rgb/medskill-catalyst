@@ -100,6 +100,25 @@ export default async function CredentialsOverview() {
         </Card>
       </div>
 
+      <Card>
+        <h2 className="font-display text-lg font-semibold text-brand-navy">By credential type</h2>
+        <table className="mt-3 w-full text-sm">
+          <thead className="text-left text-xs uppercase tracking-wide text-muted">
+            <tr><th className="py-2">Type</th><th className="py-2 text-right">Valid</th><th className="py-2 text-right">Revoked</th><th className="py-2 text-right">Superseded</th></tr>
+          </thead>
+          <tbody>
+            {s.types.map((t) => (
+              <tr key={t.type} className="border-t border-brand-navy/5">
+                <td className="py-2">{t.label}</td>
+                <td className="py-2 text-right">{t.valid}</td>
+                <td className="py-2 text-right">{t.revoked}</td>
+                <td className="py-2 text-right">{t.superseded}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
       {s.programs.length > 0 && (
         <Card>
           <h2 className="font-display text-lg font-semibold text-brand-navy">By program</h2>

@@ -126,3 +126,16 @@ npx tsx scripts/seed-public-courses.ts
 npx tsx --conditions=react-server scripts/credentials-dev-seed.ts
 npm test          # resets and migrates a *_test database only
 ```
+
+### Continuation, 2026-10-04: credential types and internship completion (P0)
+
+Owner requirement: internship completion certificates on the same platform. Built as a credential **type**, not a separate app. Decisions (owner, 2026-10-04): exact months + days duration; one internship program, code INT.
+
+- **Model.** `CredentialType` enum; a program (`courses.credential_type`) issues one type; each credential snapshots `credential_type` and a validated `details` JSON. Internship details: title, department, start, end, optional hours/supervisor/mode/location, plus the computed duration (label, days, months, remainder), frozen at issue. The end date is the completion date, so expiry, search and analytics are unchanged.
+- **Registry.** `src/modules/credentials/credential-types.ts` (client-safe): input schema, duration snapshot, duplicate context (title + dates, case/spacing-insensitive), public allowlist (title, department, start, end, duration). `duration.ts` computes the label; tested.
+- **Database.** Migration `20261004120000_credential_types`: guard extended (type/details immutable after issue), insert trigger (type = program type), program-type lock once issued. Test setup now re-applies every credential migration in order (re-running only the first one restored an older guard).
+- **Rendering.** Template fields `internship_title`, `department`, `start_date`, `end_date`, `internship_period`, `duration`, `total_hours`. `completion_date` is now required only for course templates (activation check `missingRequiredFields`); internship templates must have title, dates/period and duration. Dev internship layout for building before the artwork. Preview stamp for template and issue previews.
+- **Workflow.** Issue form: type first, programs filtered by type, internship fields, live duration, review rows, POST-only certificate preview (`/api/admin/credentials/preview`). Reissue edits internship details and recomputes the duration. Bulk: per-type columns, CSV template, row validation, in-file and registry duplicates, results export with title/dates/duration. Search: type filter and internship-title search. Dashboard: per-type counts. Public page/API: type label and allowlisted internship block. Email: internship wording.
+- **Validation (4 Oct 2026).** Type-check and production build pass; 128 tests pass (21 new). Browser, local dev server on the local rehearsal DB, email off: issue → review (3 Months) → preview PDF → issue MSC-2026-INT-JWCEXK → public page and API (no email/supervisor/mode/location/hours) → PDF → reissue with corrected end date (2 Months; original superseded) → list type filter → dashboard. Found and fixed in the browser: the dev internship layout overlapped the dev background's "For successfully completing" line.
+- **Open.** Final internship artwork (owner). Production: migration + deploy + creating the INT program are approval gates. **Signature exposure:** Gagan's signature PNG is committed and the GitHub repo is public (see ACCEPTANCE_AND_SECURITY.md, Known issues).
+

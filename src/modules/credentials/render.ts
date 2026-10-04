@@ -15,6 +15,16 @@ export type CertificateData = {
   expiresOn: Date | null;
   certificateId: string;
   verifyUrl: string;
+  /** Present for INTERNSHIP_COMPLETION credentials only. */
+  internship?: {
+    title: string;
+    department: string | null;
+    startDate: Date;
+    endDate: Date;
+    /** Computed from the dates (credential-types.ts), never typed. */
+    duration: string;
+    totalHours: number | null;
+  };
 };
 
 /** Loads a template asset by storage key. The renderer verifies its sha256. */
@@ -51,6 +61,20 @@ function fieldValue(key: FieldKey, d: CertificateData): string | null {
       return d.certificateId;
     case "verify_url":
       return d.verifyUrl.replace(/^https?:\/\//, "");
+    case "internship_title":
+      return d.internship?.title ?? null;
+    case "department":
+      return d.internship?.department ?? null;
+    case "start_date":
+      return d.internship ? formatLongDate(d.internship.startDate) : null;
+    case "end_date":
+      return d.internship ? formatLongDate(d.internship.endDate) : null;
+    case "internship_period":
+      return d.internship ? `${formatLongDate(d.internship.startDate)} – ${formatLongDate(d.internship.endDate)}` : null;
+    case "duration":
+      return d.internship?.duration ?? null;
+    case "total_hours":
+      return d.internship?.totalHours != null ? `${d.internship.totalHours} hours` : null;
   }
 }
 
@@ -185,6 +209,13 @@ const FIELD_ORDER: FieldKey[] = [
   "expiry_date",
   "certificate_id",
   "verify_url",
+  "internship_title",
+  "department",
+  "start_date",
+  "end_date",
+  "internship_period",
+  "duration",
+  "total_hours",
 ];
 
 async function build(spec: TemplateSpec, data: CertificateData, loader: AssetLoader, draw: boolean) {
@@ -237,6 +268,29 @@ async function build(spec: TemplateSpec, data: CertificateData, loader: AssetLoa
   doc.setModificationDate(data.issueDate);
   const bytes = await doc.save({ useObjectStreams: true });
   return { bytes, sha256: sha256(bytes), qr };
+}
+
+/** Marks a rendered PDF as a preview, so a screenshot of it can never pass for an issued certificate. */
+export async function stampPreview(bytes: Uint8Array, label = "PREVIEW - NOT ISSUED"): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(bytes);
+  const font = await doc.embedFont(StandardFonts.HelveticaBold);
+  for (const page of doc.getPages()) {
+    const { width, height } = page.getSize();
+    const angle = Math.atan2(height, width) * 0.8;
+    // Sized to 70% of the diagonal and centred on the page, whatever the label length.
+    const size = Math.min(Math.min(width, height) / 12, (Math.hypot(width, height) * 0.7) / font.widthOfTextAtSize(label, 1));
+    const textWidth = font.widthOfTextAtSize(label, size);
+    page.drawText(label, {
+      x: width / 2 - (textWidth / 2) * Math.cos(angle) + (size / 3) * Math.sin(angle),
+      y: height / 2 - (textWidth / 2) * Math.sin(angle) - (size / 3) * Math.cos(angle),
+      size,
+      font,
+      color: rgb(0.71, 0.14, 0.09),
+      opacity: 0.22,
+      rotate: degrees((angle * 180) / Math.PI),
+    });
+  }
+  return doc.save();
 }
 
 /** Validate that every field fits and prints, without producing a file. */

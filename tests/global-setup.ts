@@ -21,9 +21,9 @@ export default function setup() {
   END $$;
   CREATE TABLE public._prisma_migrations (id varchar(36) PRIMARY KEY);`]);
   const dir = path.resolve(__dirname, "../prisma/migrations");
-  for (const m of readdirSync(dir).filter((d) => !d.endsWith(".toml")).sort()) {
-    psql(["-f", path.join(dir, m, "migration.sql")]);
-  }
-  // Apply the credential migration twice: it must be idempotent.
-  psql(["-f", path.join(dir, "20260925120000_credentials", "migration.sql")]);
+  const migrations = readdirSync(dir).filter((d) => !d.endsWith(".toml")).sort();
+  for (const m of migrations) psql(["-f", path.join(dir, m, "migration.sql")]);
+  // Re-apply the credential-system migrations, in order: each must be idempotent,
+  // and re-running only one would leave an older trigger version installed.
+  for (const m of migrations.filter((m) => m >= "20260925120000")) psql(["-f", path.join(dir, m, "migration.sql")]);
 }

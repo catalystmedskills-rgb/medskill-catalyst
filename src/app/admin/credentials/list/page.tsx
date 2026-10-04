@@ -4,6 +4,7 @@ import { can, Permission } from "@/src/lib/permissions";
 import { db } from "@/src/lib/db";
 import { listCredentials, listFiltersSchema } from "@/src/modules/credentials/queries";
 import { CredentialStatusBadge, fmtDate, inputCls, PageHeader, secondaryBtn } from "../_ui";
+import { CREDENTIAL_TYPE_DEFINITIONS, CREDENTIAL_TYPES } from "@/src/modules/credentials/credential-types";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export default async function CredentialListPage({ searchParams }: { searchParam
   const includePrivate = can(staff.role, Permission.CredentialsViewPrivate);
   const raw = await searchParams;
   const pick = (k: string) => (typeof raw[k] === "string" && raw[k] !== "" ? (raw[k] as string) : undefined);
-  const parsed = listFiltersSchema.safeParse({ q: pick("q"), courseId: pick("courseId"), batchId: pick("batchId"), status: pick("status"), from: pick("from"), to: pick("to"), page: pick("page") });
+  const parsed = listFiltersSchema.safeParse({ q: pick("q"), courseId: pick("courseId"), type: pick("type"), batchId: pick("batchId"), status: pick("status"), from: pick("from"), to: pick("to"), page: pick("page") });
   const f = parsed.success ? parsed.data : { page: 1 };
   const [{ rows, total, pages }, programs] = await Promise.all([
     listCredentials(f, includePrivate),
@@ -29,8 +30,12 @@ export default async function CredentialListPage({ searchParams }: { searchParam
   return (
     <div className="space-y-5">
       <PageHeader title="Credentials" subtitle={`${total.toLocaleString("en-IN")} matching`} />
-      <form method="GET" className="grid gap-2 rounded-msc-lg bg-surface p-4 shadow-msc-sm sm:grid-cols-2 lg:grid-cols-[2fr_1.2fr_1fr_1fr_1fr_1fr_auto]">
-        <input type="search" name="q" defaultValue={f.q ?? ""} aria-label="Search" placeholder={includePrivate ? "Certificate ID, name or email" : "Certificate ID or name"} className={inputCls} />
+      <form method="GET" className="grid gap-2 rounded-msc-lg bg-surface p-4 shadow-msc-sm sm:grid-cols-2 lg:grid-cols-[2fr_1.1fr_1.2fr_1fr_1fr_1fr_1fr_auto]">
+        <input type="search" name="q" defaultValue={f.q ?? ""} aria-label="Search" placeholder={includePrivate ? "Certificate ID, name, email or internship name" : "Certificate ID, name or internship name"} className={inputCls} />
+        <select name="type" defaultValue={"type" in f ? (f.type ?? "") : ""} aria-label="Credential type" className={inputCls}>
+          <option value="">All types</option>
+          {CREDENTIAL_TYPES.map((t) => <option key={t} value={t}>{CREDENTIAL_TYPE_DEFINITIONS[t].label}</option>)}
+        </select>
         <select name="courseId" defaultValue={f.courseId ?? ""} aria-label="Program" className={inputCls}>
           <option value="">All programs</option>
           {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -58,7 +63,7 @@ export default async function CredentialListPage({ searchParams }: { searchParam
             <tr>
               <th className="px-4 py-3">Certificate ID</th>
               <th className="px-4 py-3">Learner</th>
-              <th className="px-4 py-3">Program · cohort</th>
+              <th className="px-4 py-3">Type · program</th>
               <th className="px-4 py-3">Completed</th>
               <th className="px-4 py-3">Issued</th>
               <th className="px-4 py-3">Status</th>
@@ -70,7 +75,12 @@ export default async function CredentialListPage({ searchParams }: { searchParam
               <tr key={r.id} className="border-b border-brand-navy/5 last:border-0 hover:bg-brand-pale/40">
                 <td className="px-4 py-3"><Link href={`/admin/credentials/${r.id}`} className="font-mono text-xs font-semibold text-brand-blue hover:underline">{r.certificateId}</Link></td>
                 <td className="px-4 py-3"><span className="font-medium text-brand-navy">{r.learnerName}</span>{r.email && <span className="block text-xs text-muted">{r.email}</span>}</td>
-                <td className="px-4 py-3">{r.programName}{r.cohort && <span className="block text-xs text-muted">{r.cohort}</span>}</td>
+                <td className="px-4 py-3">
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-brand-blue">{CREDENTIAL_TYPE_DEFINITIONS[r.credentialType].label}</span>
+                  {r.internshipTitle ? <span className="block">{r.internshipTitle}</span> : null}
+                  <span className={r.internshipTitle ? "block text-xs text-muted" : ""}>{r.programName}</span>
+                  {r.cohort && <span className="block text-xs text-muted">{r.cohort}</span>}
+                </td>
                 <td className="px-4 py-3">{fmtDate(r.completionDate)}</td>
                 <td className="px-4 py-3">{fmtDate(r.issuedAt)}</td>
                 <td className="px-4 py-3"><CredentialStatusBadge status={r.displayStatus} /></td>

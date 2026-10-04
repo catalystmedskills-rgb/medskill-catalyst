@@ -4,10 +4,12 @@ import { db } from "@/src/lib/db";
 import type { Prisma } from "@/src/generated/prisma/client";
 import { indianDate, parseISODate } from "./dates";
 import { derivePublicStatus } from "./status";
+import { CREDENTIAL_TYPES, CREDENTIAL_TYPE_DEFINITIONS, type CredentialType } from "./credential-types";
 
 export const listFiltersSchema = z.object({
   q: z.string().trim().max(120).optional(),
   courseId: z.string().max(60).optional(),
+  type: z.enum(CREDENTIAL_TYPES).optional(),
   batchId: z.string().max(60).optional(),
   status: z.enum(["VALID", "EXPIRED", "REVOKED", "SUPERSEDED", "ISSUING", "FAILED"]).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -30,11 +32,13 @@ export async function listCredentials(f: ListFilters, includePrivate: boolean) {
     const or: Prisma.CredentialWhereInput[] = [
       { certificate_id: { contains: q.toUpperCase() } },
       { learner_name: { contains: q, mode: "insensitive" } },
+      { details: { path: ["internshipTitle"], string_contains: q } },
     ];
     if (includePrivate) or.push({ student: { email: { contains: q.toLowerCase(), mode: "insensitive" } } });
     and.push({ OR: or });
   }
   if (f.courseId) and.push({ course_id: f.courseId });
+  if (f.type) and.push({ credential_type: f.type });
   if (f.batchId) and.push({ batch_id: f.batchId });
   const today = indianDate(new Date());
   if (f.status === "EXPIRED") and.push({ status: "VALID", expires_at: { lte: today } });
@@ -61,6 +65,8 @@ export async function listCredentials(f: ListFilters, includePrivate: boolean) {
         issued_at: true,
         expires_at: true,
         status: true,
+        credential_type: true,
+        details: true,
         batch: { select: { name: true } },
         student: { select: { email: true } },
         deliveries: { orderBy: { created_at: "desc" }, take: 1, select: { status: true } },
@@ -75,6 +81,8 @@ export async function listCredentials(f: ListFilters, includePrivate: boolean) {
     rows: rows.map((r) => ({
       id: r.id,
       certificateId: r.certificate_id,
+      credentialType: r.credential_type as CredentialType,
+      internshipTitle: r.credential_type === "INTERNSHIP_COMPLETION" ? ((r.details as { internshipTitle?: string }).internshipTitle ?? null) : null,
       learnerName: r.learner_name,
       email: includePrivate ? r.student.email : null,
       programName: r.program_name,
@@ -109,7 +117,7 @@ export async function getCredentialDetail(id: string) {
 export async function dashboardStats() {
   const today = indianDate(new Date());
   const since30 = new Date(Date.now() - 30 * 24 * 3600_000);
-  const [byStatus, expired, issued30, failedDeliveries, failedCredentials, byProgram, recent] = await Promise.all([
+  const [byStatus, expired, issued30, failedDeliveries, failedCredentials, byProgram, byType, recent] = await Promise.all([
     db.credential.groupBy({ by: ["status"], _count: { _all: true } }),
     db.credential.count({ where: { status: "VALID", expires_at: { lte: today } } }),
     db.credential.count({ where: { status: { in: ["VALID", "REVOKED", "SUPERSEDED"] }, issued_at: { gte: since30 } } }),
@@ -121,6 +129,7 @@ export async function dashboardStats() {
     }),
     db.credential.findMany({ where: { status: "FAILED" }, orderBy: { updated_at: "desc" }, take: 10, select: { id: true, certificate_id: true, learner_name: true, last_error: true } }),
     db.credential.groupBy({ by: ["course_id", "status"], _count: { _all: true } }),
+    db.credential.groupBy({ by: ["credential_type", "status"], _count: { _all: true } }),
     db.credentialEvent.findMany({
       orderBy: { created_at: "desc" },
       take: 12,
@@ -134,6 +143,15 @@ export async function dashboardStats() {
     valid: byProgram.filter((b) => b.course_id === c.id && b.status === "VALID").reduce((a, b) => a + b._count._all, 0),
     revoked: byProgram.filter((b) => b.course_id === c.id && b.status === "REVOKED").reduce((a, b) => a + b._count._all, 0),
     superseded: byProgram.filter((b) => b.course_id === c.id && b.status === "SUPERSEDED").reduce((a, b) => a + b._count._all, 0),
+  }));
+  const sum = (type: CredentialType, status: string) =>
+    byType.filter((b) => b.credential_type === type && b.status === status).reduce((a, b) => a + b._count._all, 0);
+  const types = CREDENTIAL_TYPES.map((t) => ({
+    type: t,
+    label: CREDENTIAL_TYPE_DEFINITIONS[t].label,
+    valid: sum(t, "VALID"),
+    revoked: sum(t, "REVOKED"),
+    superseded: sum(t, "SUPERSEDED"),
   }));
   // Undelivered = failed deliveries whose credential has no later successful send.
   const undelivered = [] as typeof failedDeliveries;
@@ -152,6 +170,7 @@ export async function dashboardStats() {
     undelivered,
     failedCredentials,
     programs,
+    types,
     recent,
   };
 }

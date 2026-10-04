@@ -3,6 +3,7 @@ import { can, Permission } from "@/src/lib/permissions";
 import { listPrograms } from "@/src/modules/credentials/queries";
 import { updateProgramAction } from "../actions";
 import { Card, Flash, inputCls, PageHeader, secondaryBtn } from "../_ui";
+import { CREDENTIAL_TYPE_DEFINITIONS, CREDENTIAL_TYPES } from "@/src/modules/credentials/credential-types";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ export default async function ProgramsPage({ searchParams }: { searchParams: Pro
       <Flash error={sp.error} ok={sp.ok ? "Program settings saved." : undefined} />
       <p className="text-sm text-muted">
         A program needs a <strong>program code</strong> (used in certificate IDs, e.g. MSC-2026-<strong>FND</strong>-7K4P92) and an <strong>active template</strong> before
-        it can issue credentials. Changing a code affects only future certificate IDs.
+        it can issue credentials. Changing a code affects only future certificate IDs. Each program issues one <strong>credential type</strong>; it is
+        fixed once the program has issued anything.
       </p>
       <div className="space-y-4">
         {programs.map((p) => {
@@ -33,8 +35,16 @@ export default async function ProgramsPage({ searchParams }: { searchParams: Pro
                   {!p.is_active && " · inactive program"}
                 </span>
               </div>
-              <form action={updateProgramAction} className="mt-4 grid gap-3 sm:grid-cols-[120px_1fr_160px_1.4fr_auto]">
+              <form action={updateProgramAction} className="mt-4 grid gap-3 sm:grid-cols-[180px_120px_1fr_160px_1.4fr_auto]">
                 <input type="hidden" name="courseId" value={p.id} />
+                <label className="space-y-1 text-xs font-semibold text-brand-navy">
+                  Credential type
+                  <select name="credentialType" defaultValue={p.credential_type} disabled={!manage || p._count.credentials > 0} className={inputCls}>
+                    {CREDENTIAL_TYPES.map((t) => (
+                      <option key={t} value={t}>{CREDENTIAL_TYPE_DEFINITIONS[t].label}</option>
+                    ))}
+                  </select>
+                </label>
                 <label className="space-y-1 text-xs font-semibold text-brand-navy">
                   Code
                   <input name="code" defaultValue={p.code ?? ""} maxLength={10} pattern="[A-Za-z0-9]{2,10}" placeholder="FND" disabled={!manage} className={`${inputCls} font-mono uppercase`} />

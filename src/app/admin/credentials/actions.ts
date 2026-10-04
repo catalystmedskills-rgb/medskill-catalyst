@@ -25,7 +25,10 @@ import {
   uploadTemplateAsset,
 } from "@/src/modules/credentials/templates";
 import { isValidProgramCode, normalizeCertificateId } from "@/src/modules/credentials/identifiers";
-import { formatLongDate } from "@/src/modules/credentials/dates";
+import { formatLongDate, parseISODate } from "@/src/modules/credentials/dates";
+import { CREDENTIAL_TYPE_DEFINITIONS, credentialTypeSchema, INTERNSHIP_MODE_LABELS } from "@/src/modules/credentials/credential-types";
+import { missingRequiredFields, parseTemplateSpec } from "@/src/modules/credentials/template-config";
+import { readIssueForm } from "./issue/read-form";
 
 function safeMessage(err: unknown): string {
   if (err instanceof CredentialError || err instanceof AuthError) return err.message;
@@ -52,7 +55,10 @@ export type PlanState =
         program: string;
         programCode: string;
         cohort: string | null;
+        credentialType: string;
         completionDate: string;
+        /** Internship rows for the review, in print order; null for course credentials. */
+        internship: [string, string][] | null;
         issueDate: string;
         expires: string;
         template: string;
@@ -62,18 +68,6 @@ export type PlanState =
       warnings: string[];
     };
 
-function readIssueForm(formData: FormData) {
-  return {
-    fullName: String(formData.get("fullName") ?? ""),
-    email: String(formData.get("email") ?? ""),
-    courseId: String(formData.get("courseId") ?? ""),
-    batchId: (formData.get("batchId") as string) || null,
-    completionDate: String(formData.get("completionDate") ?? ""),
-    sendEmail: formData.get("sendEmail") === "on",
-    idempotencyKey: String(formData.get("idempotencyKey") ?? ""),
-  };
-}
-
 export async function planIssueAction(_prev: PlanState, formData: FormData): Promise<PlanState> {
   try {
     await requirePermission(Permission.CredentialsIssue, { individual: true });
@@ -82,7 +76,7 @@ export async function planIssueAction(_prev: PlanState, formData: FormData): Pro
     if (plan.dedupe.existingCertificateId) {
       return {
         status: "error",
-        message: `Blocked: this learner already has an active credential for this program${plan.batch ? " and cohort" : " and completion date"} (${plan.dedupe.existingCertificateId}). To correct it, open that credential and use Reissue.`,
+        message: `Blocked: this learner already has an active credential ${plan.internship ? "for this internship (same title and dates)" : `for this program${plan.batch ? " and cohort" : " and completion date"}`} (${plan.dedupe.existingCertificateId}). To correct it, open that credential and use Reissue.`,
         duplicate: { certificateId: plan.dedupe.existingCertificateId, credentialId: plan.dedupe.existingCredentialId },
       };
     }
@@ -94,7 +88,19 @@ export async function planIssueAction(_prev: PlanState, formData: FormData): Pro
         program: plan.course.title,
         programCode: plan.course.code,
         cohort: plan.batch?.name ?? null,
+        credentialType: CREDENTIAL_TYPE_DEFINITIONS[plan.credentialType].label,
         completionDate: formatLongDate(plan.completionDate),
+        internship: plan.internship
+          ? ([
+              ["Internship name", plan.internship.internshipTitle],
+              ["Department", plan.internship.department ?? "—"],
+              ["Period", `${formatLongDate(parseISODate(plan.internship.startDate)!)} – ${formatLongDate(plan.completionDate)}`],
+              ["Duration", `${plan.internship.duration.label} (calculated)`],
+              ["Total hours", plan.internship.totalHours != null ? `${plan.internship.totalHours}` : "Not stated"],
+              ["Supervisor", plan.internship.supervisor ? `${plan.internship.supervisor} (internal)` : "—"],
+              ["Mode / location", [plan.internship.mode ? INTERNSHIP_MODE_LABELS[plan.internship.mode] : null, plan.internship.location].filter(Boolean).join(", ") || "—"],
+            ] as [string, string][])
+          : null,
         issueDate: formatLongDate(plan.issueDate),
         expires: plan.expiresAt ? formatLongDate(plan.expiresAt) : "Never (lifetime credential)",
         template: `${plan.template.name} · v${plan.template.version}`,
@@ -179,6 +185,15 @@ export async function reissueAction(formData: FormData) {
       {
         fullName: (formData.get("fullName") as string) || undefined,
         completionDate: (formData.get("completionDate") as string) || undefined,
+        // Internship corrections: only the fields present on the form; the duration is recomputed.
+        internship:
+          formData.get("credentialType") === "INTERNSHIP_COMPLETION"
+            ? Object.fromEntries(
+                ["internshipTitle", "department", "startDate", "endDate", "totalHours", "supervisor", "mode", "location"]
+                  .filter((k) => formData.has(k))
+                  .map((k) => [k, String(formData.get(k) ?? "")]),
+              )
+            : undefined,
         batchId: batchRaw === "__keep__" ? undefined : (batchRaw as string) || null,
         reason: String(formData.get("reason") ?? ""),
         sendEmail: formData.get("sendEmail") === "on",
@@ -212,9 +227,21 @@ export async function updateProgramAction(formData: FormData) {
     const before = await db.course.findUniqueOrThrow({ where: { id: courseId } });
     const clash = code ? await db.course.findFirst({ where: { code, NOT: { id: courseId } } }) : null;
     if (clash) throw new CredentialError(`Code ${code} is already used by ${clash.name}.`, "VALIDATION");
+    const requestedType = credentialTypeSchema.safeParse(formData.get("credentialType"));
+    const credentialType = requestedType.success ? requestedType.data : before.credential_type;
+    if (credentialType !== before.credential_type) {
+      if (await db.credential.count({ where: { course_id: courseId } })) {
+        throw new CredentialError("This program has issued credentials, so its credential type can't change.", "NOT_ALLOWED");
+      }
+      const active = await db.certificateTemplate.findFirst({ where: { course_id: courseId, status: "ACTIVE" } });
+      const missing = active ? missingRequiredFields(credentialType, parseTemplateSpec(active).fieldConfig) : [];
+      if (missing.length) {
+        throw new CredentialError(`The active template can't print ${CREDENTIAL_TYPE_DEFINITIONS[credentialType].label.toLowerCase()} certificates (no ${missing.join(", ")}). Retire it first, then add a suitable template.`, "VALIDATION");
+      }
+    }
     const after = await db.course.update({
       where: { id: courseId },
-      data: { code: code || null, validity_months: validity, validity_anchor: anchor, certificate_title: title || null },
+      data: { code: code || null, validity_months: validity, validity_anchor: anchor, certificate_title: title || null, credential_type: credentialType },
     });
     await db.auditLog.create({
       data: {
@@ -222,8 +249,8 @@ export async function updateProgramAction(formData: FormData) {
         action: "PROGRAM_CREDENTIAL_SETTINGS_UPDATED",
         entity_type: "course",
         entity_id: courseId,
-        before: { code: before.code, validity_months: before.validity_months, validity_anchor: before.validity_anchor, certificate_title: before.certificate_title },
-        after: { code: after.code, validity_months: after.validity_months, validity_anchor: after.validity_anchor, certificate_title: after.certificate_title },
+        before: { code: before.code, validity_months: before.validity_months, validity_anchor: before.validity_anchor, certificate_title: before.certificate_title, credential_type: before.credential_type },
+        after: { code: after.code, validity_months: after.validity_months, validity_anchor: after.validity_anchor, certificate_title: after.certificate_title, credential_type: after.credential_type },
       },
     });
   } catch (err) {

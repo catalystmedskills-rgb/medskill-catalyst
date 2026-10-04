@@ -29,6 +29,29 @@ re-run (tested twice in a row).
 3. Check: `select count(*) from credentials;` returns 0, and
    `select relrowsecurity from pg_class where relname='credentials';` returns `t`.
 
+### Credential types / internships (2026-10-04) [GATE]
+
+`prisma/migrations/20261004120000_credential_types/migration.sql` is **additive and
+idempotent**: a `CredentialType` enum, `credential_type` columns (default
+`COURSE_COMPLETION`) on `courses`, `credentials` and `credential_bulk_jobs`,
+`credentials.details` (default `{}`), one index, a replaced `credentials_guard` (the
+original rules plus type/details frozen once issued), and two new triggers (type must
+match the program; a program's type is locked once it has issued). Every existing row,
+including live certificates, becomes `COURSE_COMPLETION`; nothing is rewritten.
+
+1. Backup first (the project has no automatic backups; take a `pg_dump`).
+2. Deploy the release **and** apply the migration together: the new code reads the new
+   columns. `npx prisma migrate deploy` with `DIRECT_URL` → production. **[GATE]**
+3. Check: `select credential_type, count(*) from credentials group by 1;` shows only
+   `COURSE_COMPLETION`, and the live certificate still verifies.
+4. Internship program (owner): Programs → set the internship program's code (**INT**) and
+   type **Internship completion** before it issues anything; then upload and activate the
+   internship template (needs internship title, dates or period, and duration fields;
+   signature in asset slot `asset4`).
+
+Rollback: redeploy the previous release. The added columns are ignored by old code; the
+replaced guard only adds checks. Do not drop the columns.
+
 ## Before the first real credential
 
 1. **Program codes:** Admin → Credentials → Programs. Set codes for the real programs.

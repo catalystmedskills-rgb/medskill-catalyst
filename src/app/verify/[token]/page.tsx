@@ -80,16 +80,28 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
       </div>
 
       <div className="rounded-msc-lg bg-surface p-6 shadow-msc-md sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-blue">Credential record</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-blue">{c.credentialTypeLabel}</p>
         <h1 id="credential-heading" className="mt-3 font-display text-3xl font-semibold leading-tight tracking-tight text-brand-navy sm:text-4xl">
           {c.learnerName}
         </h1>
-        <p className="mt-2 text-lg text-ink">{c.programName}</p>
+        <p className="mt-2 text-lg text-ink">{c.internship ? c.internship.internshipTitle : c.programName}</p>
 
         <dl className="mt-6">
           <Row label="Status" value={s.label} />
+          <Row label="Credential type" value={c.credentialTypeLabel} />
           <Row label="Certificate ID" value={c.certificateId} mono />
-          <Row label="Completed" value={formatLongDate(parseISODate(c.completionDate)!)} />
+          {c.internship ? (
+            <>
+              <Row label="Internship name" value={c.internship.internshipTitle} />
+              <Row label="Program" value={c.programName} />
+              {c.internship.department && <Row label="Department" value={c.internship.department} />}
+              <Row label="Start date" value={formatLongDate(parseISODate(c.internship.startDate)!)} />
+              <Row label="End date" value={formatLongDate(parseISODate(c.internship.endDate)!)} />
+              <Row label="Duration" value={c.internship.duration} />
+            </>
+          ) : (
+            <Row label="Completed" value={formatLongDate(parseISODate(c.completionDate)!)} />
+          )}
           <Row label="Issued" value={formatLongDate(parseISODate(c.issueDate)!)} />
           {c.expiresOn && <Row label={c.status === "EXPIRED" ? "Expired" : "Valid until"} value={formatLongDate(parseISODate(c.expiresOn)!)} />}
           <Row label="Issued by" value={c.issuer} />

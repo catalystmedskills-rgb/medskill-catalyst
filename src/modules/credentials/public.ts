@@ -1,4 +1,5 @@
 import { ISSUER_NAME, verificationUrl } from "./config";
+import { CREDENTIAL_TYPE_DEFINITIONS, publicInternshipDetails, type CredentialType, type PublicInternshipDetails } from "./credential-types";
 import { toISODate } from "./dates";
 import { derivePublicStatus, type PublicStatus, type StoredStatus } from "./status";
 
@@ -12,6 +13,9 @@ import { derivePublicStatus, type PublicStatus, type StoredStatus } from "./stat
  */
 export type PublicCredential = {
   certificateId: string;
+  credentialType: CredentialType;
+  /** "Internship Completion Certificate" */
+  credentialTypeLabel: string;
   learnerName: string;
   programName: string;
   completionDate: string; // YYYY-MM-DD
@@ -22,6 +26,12 @@ export type PublicCredential = {
   verificationUrl: string;
   /** Present only when the certificate PDF may be downloaded (status VALID or EXPIRED). */
   certificateAvailable: boolean;
+  /**
+   * INTERNSHIP_COMPLETION only: the registry's public allowlist (title,
+   * department, dates, duration). Supervisor, mode, location and hours are
+   * never published.
+   */
+  internship: PublicInternshipDetails | null;
 };
 
 export type PublicSource = {
@@ -33,6 +43,8 @@ export type PublicSource = {
   issued_at: Date;
   expires_at: Date | null;
   status: StoredStatus;
+  credential_type: CredentialType;
+  details: unknown;
 };
 
 /** Fields selected from the database for public lookups — nothing else is read. */
@@ -45,6 +57,9 @@ export const PUBLIC_SELECT = {
   issued_at: true,
   expires_at: true,
   status: true,
+  credential_type: true,
+  // Read here, but only the registry's allowlisted keys are copied out.
+  details: true,
 } as const;
 
 export function toPublicCredential(src: PublicSource, now: Date = new Date()): PublicCredential | null {
@@ -58,6 +73,8 @@ export function toPublicCredential(src: PublicSource, now: Date = new Date()): P
   }).format(src.issued_at);
   return {
     certificateId: src.certificate_id,
+    credentialType: src.credential_type,
+    credentialTypeLabel: CREDENTIAL_TYPE_DEFINITIONS[src.credential_type].publicLabel,
     learnerName: src.learner_name,
     programName: src.program_name,
     completionDate: toISODate(src.completion_date),
@@ -67,11 +84,14 @@ export function toPublicCredential(src: PublicSource, now: Date = new Date()): P
     issuer: ISSUER_NAME,
     verificationUrl: verificationUrl(src.verification_token),
     certificateAvailable: status === "VALID" || status === "EXPIRED",
+    internship: src.credential_type === "INTERNSHIP_COMPLETION" ? publicInternshipDetails(src.details) : null,
   };
 }
 
 export const PUBLIC_FIELD_NAMES: ReadonlyArray<keyof PublicCredential> = [
   "certificateId",
+  "credentialType",
+  "credentialTypeLabel",
   "learnerName",
   "programName",
   "completionDate",
@@ -81,4 +101,5 @@ export const PUBLIC_FIELD_NAMES: ReadonlyArray<keyof PublicCredential> = [
   "issuer",
   "verificationUrl",
   "certificateAvailable",
+  "internship",
 ];

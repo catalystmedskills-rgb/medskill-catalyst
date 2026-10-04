@@ -3,10 +3,13 @@ import type { Prisma, StaffUser } from "@/src/generated/prisma/client";
 import { CredentialError, uniqueViolation } from "./errors";
 import { defaultDeps, type CredentialDeps } from "./service";
 import { sha256Hex, templateAssetKey } from "./storage";
+import { stampPreview } from "./render";
 import {
   backgroundSchema,
   DEV_TEMPLATE_BACKGROUND,
+  DEV_INTERNSHIP_TEMPLATE_FIELD_CONFIG,
   DEV_TEMPLATE_FIELD_CONFIG,
+  missingRequiredFields,
   fieldConfigSchema,
   parseTemplateSpec,
   signaturesSchema,
@@ -53,7 +56,7 @@ export async function createDevTemplate(courseId: string, actor: StaffUser, deps
           status: "DRAFT",
           is_production: false,
           background: DEV_TEMPLATE_BACKGROUND,
-          field_config: DEV_TEMPLATE_FIELD_CONFIG,
+          field_config: course.credential_type === "INTERNSHIP_COMPLETION" ? DEV_INTERNSHIP_TEMPLATE_FIELD_CONFIG : DEV_TEMPLATE_FIELD_CONFIG,
           signatures: [],
           notes: "Watermarked specimen for building and testing. Cannot issue on production.",
           created_by_id: actor.id,
@@ -150,10 +153,22 @@ export async function previewTemplate(templateId: string, deps: CredentialDeps =
       expiresOn: t.course.validity_months ? new Date("2028-07-15T00:00:00Z") : null,
       certificateId: generateCertificateId({ programCode: t.course.code ?? "PREV", year: 2026 }),
       verifyUrl: verificationUrl("PREVIEWxxxxxxxxxxxxxxx"),
+      // Long sample values so the preview shows the worst case fitting.
+      internship:
+        t.course.credential_type === "INTERNSHIP_COMPLETION"
+          ? {
+              title: "Clinical Research and Regulatory Affairs Intern",
+              department: "Clinical Operations & Pharmacovigilance",
+              startDate: new Date("2026-06-01T00:00:00Z"),
+              endDate: new Date("2026-08-31T00:00:00Z"),
+              duration: "3 Months",
+              totalHours: 480,
+            }
+          : undefined,
     },
     (p) => deps.storage.get(p),
   );
-  return out.bytes;
+  return stampPreview(out.bytes, "TEMPLATE PREVIEW - SAMPLE DATA");
 }
 
 export async function activateTemplate(templateId: string, actor: StaffUser, deps: CredentialDeps = defaultDeps()) {
@@ -161,7 +176,15 @@ export async function activateTemplate(templateId: string, actor: StaffUser, dep
     const t = await tx.certificateTemplate.findUnique({ where: { id: templateId } });
     if (!t) throw new CredentialError("Template not found.", "NOT_FOUND");
     if (t.status !== "DRAFT") throw new CredentialError("Only a draft template can be activated.", "NOT_ALLOWED");
-    parseTemplateSpec(t); // refuse to activate an invalid configuration
+    const spec = parseTemplateSpec(t); // refuse to activate an invalid configuration
+    const course = await tx.course.findUniqueOrThrow({ where: { id: t.course_id }, select: { credential_type: true } });
+    const missing = missingRequiredFields(course.credential_type, spec.fieldConfig);
+    if (missing.length) {
+      throw new CredentialError(
+        `This template can't issue ${course.credential_type === "INTERNSHIP_COMPLETION" ? "internship" : "course"} certificates: it has no ${missing.join(", ")}.`,
+        "VALIDATION",
+      );
+    }
     const previous = await tx.certificateTemplate.findFirst({ where: { course_id: t.course_id, status: "ACTIVE" } });
     if (previous) {
       await tx.certificateTemplate.update({ where: { id: previous.id }, data: { status: "RETIRED", retired_at: new Date() } });

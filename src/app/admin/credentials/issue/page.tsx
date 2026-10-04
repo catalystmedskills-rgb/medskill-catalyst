@@ -19,6 +19,7 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
       id: true,
       name: true,
       code: true,
+      credential_type: true,
       batches: { orderBy: { created_at: "desc" }, select: { id: true, name: true } },
       certificate_templates: { where: { status: "ACTIVE" }, select: { id: true } },
     },
@@ -26,6 +27,7 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
   const options = programs.map((p) => ({
     id: p.id,
     name: p.name,
+    type: p.credential_type,
     ready: Boolean(p.code) && p.certificate_templates.length > 0,
     reason: !p.code ? "no program code" : p.certificate_templates.length === 0 ? "no active template" : null,
     cohorts: p.batches,
@@ -33,7 +35,7 @@ export default async function IssuePage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Issue a credential" subtitle="Enter the learner's details, review, then confirm. Nothing is issued until you confirm." />
+      <PageHeader title="Issue a credential" subtitle="Choose the credential type, enter the details, review and preview, then confirm. Nothing is issued until you confirm." />
       <Flash error={sp.error} />
       {sp.dup && (
         <p className="text-sm">

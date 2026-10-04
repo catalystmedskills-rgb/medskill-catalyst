@@ -22,6 +22,30 @@ build (25 Sep 2026), **DB** enforced by database constraint/trigger.
 | Retries/idempotency never create duplicates | PASS | T single, concurrent, bulk concurrent processors, bulk retry |
 | Critical flows have automated tests and a production smoke test | PARTIAL | 87 automated tests pass. The production smoke test is a deployment gate (checklist). |
 
+## P0 addendum (2026-10-04): credential types and internship completion certificates
+
+Owner requirement: the same credential platform issues INTERNSHIP COMPLETION certificates. No separate application. Credentials have a type; the core internship issuance and verification workflow is **P0**. Owner decisions 2026-10-04: duration shows exact months + days (whole months, whole weeks under a month, otherwise "N Months D Days" / "N Days"); internships use one program, code **INT**.
+
+Evidence: **T** `tests/unit/credential-types.test.ts`, `tests/integration/internship.test.ts`, `tests/unit/public-permissions-render.test.ts`; **DB** migration `20261004120000_credential_types`; **B** browser check on a local dev server against the local rehearsal database (4 Oct 2026: issue → review → preview → issue → public page → PDF → reissue → list filter → dashboard).
+
+| # | Requirement | Priority | Status | Evidence |
+|---|---|---|---|---|
+| CT-01 | Credentials have a type; initial types COURSE_COMPLETION and INTERNSHIP_COMPLETION | P0 | PASS | DB enum + `credentials.credential_type`; T enum ⇔ registry match |
+| CT-02 | New types (WORKSHOP, FELLOWSHIP, TRAINING, OBSERVERSHIP) addable without redesign | P0 | PASS (design) | One registry (`credential-types.ts`) + additive `ALTER TYPE … ADD VALUE`; details live in one validated JSON snapshot |
+| CT-03 | Internship fields: name, email, internship name (typed per certificate; labelled "Internship name", owner 2026-10-04), department, start, end, optional hours, supervisor, mode (ON_SITE/REMOTE/HYBRID), location; issue date, ID, token, template version, status | P0 | PASS | T; B |
+| CT-04 | Start/end dates are the source of truth; duration calculated, never entered; hours stored separately, never inferred | P0 | PASS | T (3 Months, 4 Weeks, 2 Months 15 Days, leap/month-end; a supplied "duration" is ignored in single and bulk) |
+| CT-05 | Issue workflow: type first → internship fields → live calculated duration → review → certificate preview → issue → ID/token/QR/PDF/storage/email/verification | P0 | PASS | B; preview is POST-only, stamped PREVIEW, writes nothing |
+| CT-06 | Dedicated internship template support; render title, department, start, end, period, duration, hours, ID, issue date, QR, signature | P0 | PASS (dev template) / PENDING artwork | Template fields `internship_title`, `department`, `start_date`, `end_date`, `internship_period`, `duration`, `total_hours`; activation refuses an internship template missing title, dates or duration (T). Final internship artwork: owner to supply |
+| CT-07 | Authorized signature configured per template/program, not globally | P0 | PASS | Existing per-template `signatures` blocks (asset slot `asset4`) |
+| CT-08 | Raw signature never exposed via a public storage URL | P0 | PASS in app / **FAIL in git** | Template assets live in the private `credentials` bucket (refuses a public bucket; T). **But** `assets/credentials/foundation-v1/signature-gagan-victor.png` is committed and the GitHub repo `catalystmedskills-rgb/medskill-catalyst` is public: the file is downloadable (HTTP 200, 4 Oct 2026). Owner decision required, see Known issues |
+| CT-09 | Public page shows only approved fields: name, type, title, department, start, end, duration, ID, issue date, issuer, status | P0 | PASS | Allowlist in `publicInternshipDetails` + `toPublicCredential`; T and B confirm no email, supervisor, mode, location, hours or internal IDs on page or API |
+| CT-10 | Same lifecycle: VALID, EXPIRED (when the program has validity), REVOKED, SUPERSEDED/REISSUED | P0 | PASS | T (reissue recomputes duration and supersedes; revoke); B (reissue) |
+| CT-11 | Type and details frozen once issued; type always matches the program | P0 | PASS | DB guard (details/type immutable), insert trigger (type = program type), program-type lock once issued; T |
+| CT-12 | Duplicate rule: same learner + program + internship title + start + end (case/spacing-insensitive) | P0 | PASS | T (single and bulk, in-file and against registry) |
+| CT-13 | Bulk internship import (full_name, email, internship_name (internship_title also accepted), department, start_date, end_date, total_hours, supervisor, mode, location): upload → validate → duration → duplicates → preview → confirm → individual IDs/tokens/QR/PDF/email → row results | P0 | PASS | T (`bulk internship issuance`); per-type CSV template; results export adds title/dates/duration, no email for non-private roles |
+| CT-14 | Registry, verification, admin search, audit and analytics include internships; search filters by type | P0 | PASS | Type filter + internship-title search (B: 2 of 6 local credentials); `credential_type` in issue/reissue/bulk audit metadata; dashboard "By credential type" |
+| CT-15 | Don't block on internship artwork; integrate the final design when supplied | P0 | PASS | Watermarked dev internship template works end to end; final artwork = new template version upload |
+
 ## Functional requirements
 
 FR-01 through FR-16: **PASS**, except FR-01, which is PASS in code and awaits your approval
@@ -49,6 +73,9 @@ of the Clerk cutover. FR-08 is PARTIAL until the artwork arrives. FR-17 (basic c
 | Spreadsheet formula injection | Export cells starting with = + - @ are neutralized (tested). |
 
 ### Known, not fixed (need decisions)
+
+- **Signature in a public repository (found 2026-10-04, HIGH).** Gagan Victor's authorized signature (`assets/credentials/foundation-v1/signature-gagan-victor.png`, commit `0761720`) is publicly downloadable from the public GitHub repo `catalystmedskills-rgb/medskill-catalyst` (branch `feat/credentials`). The website and storage do not expose it. Options, all owner decisions: make the repository private (fastest, stops new exposure); remove the file from the branch and keep it only in a gitignored/private location; rewrite history (force push) to purge it; consider it already copied and decide whether to replace the signature asset. Production keeps its own copy in the private bucket, so issuance is unaffected by any of these.
+
 
 1. `next@15.5.19` has a critical advisory in `npm audit`. It predates this work. Upgrade before launch.
 2. `xlsx@0.18.5`, used by the existing leads export, has known CVEs. Bulk import doesn't use it (it uses exceljs). Replace it or install the SheetJS 0.20.3 release from their CDN.

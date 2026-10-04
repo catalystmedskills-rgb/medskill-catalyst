@@ -60,6 +60,7 @@ Where things live:
 7. **Migrations are additive and idempotent** (`IF NOT EXISTS`, guarded `DO` blocks). No drops or renames.
 8. Certificate ID format and the canonical URL come from `config.ts` / env only. Never hard-code a domain.
 9. Tracking pixels and GA stay off `/verify*` (`src/lib/tracking-exclusions.ts`).
+10. **Credential types go through the registry** (`src/modules/credentials/credential-types.ts`): a program issues one type; type-specific data lives in the validated, frozen `credentials.details`; public output only uses the registry's allowlist. An internship's duration is computed from its dates, never entered. A new type = additive enum value + one registry entry.
 
 ### Approval gates: ask the owner (Areeb) before any of these
 
@@ -70,7 +71,9 @@ Production deploy · applying migrations to production · switching `ADMIN_AUTH_
 1. Review/upload `assets/credentials/foundation-v1/` as a new template version (instructions in its README). Gagan's signature use is authorized and its PNG must be uploaded as asset4. The builder uses the generic renderer and real QR. Check font coverage for non-Latin names.
 2. Done 2026-09-28. Program decision (owner, 2026-09-28): one live program, **MedTech Immersion Program** (slug `foundation-program`, code **FND**, ₹25,000 + 18% GST = ₹29,500, 6 weeks, online). Created in the new Supabase project `uhavtfhfebwwamltlmmq`. The Advanced Module is deferred; no ADV course or code exists. FND can still be changed (e.g. to IMM) before the first certificate is issued.
 3. After approval: Clerk cutover (follow `AUTH_ROLLOUT.md` exactly), production migration, smoke test.
-4. Hardening: done in code on 2026-09-27 (`next` 15.5.26, SheetJS replaced by ExcelJS with formula neutralisation, the legacy `/api/careers/admin` and `/api/invoices*` routes require `requireStaff` in Clerk mode; `npm audit --omit=dev` reports 0). Still open, needs owner approval as it is remote infrastructure: a Vercel Firewall rate-limit rule on `/verify*`.
+4. **Internship credentials (P0, built 2026-10-04, not deployed).** Production needs: the `20261004120000_credential_types` migration with the release (approval gate), the INT internship program (type Internship completion) and the internship template artwork (owner). See `docs/credentials/ACCEPTANCE_AND_SECURITY.md` → P0 addendum.
+5. **Gagan's signature is downloadable from the public GitHub repo** (found 2026-10-04). Owner decides: make the repo private, remove the file, and/or purge history. Don't commit signature or other private assets again.
+6. Hardening: done in code on 2026-09-27 (`next` 15.5.26, SheetJS replaced by ExcelJS with formula neutralisation, the legacy `/api/careers/admin` and `/api/invoices*` routes require `requireStaff` in Clerk mode; `npm audit --omit=dev` reports 0). Still open, needs owner approval as it is remote infrastructure: a Vercel Firewall rate-limit rule on `/verify*`.
 
 ## Working style the owner expects
 

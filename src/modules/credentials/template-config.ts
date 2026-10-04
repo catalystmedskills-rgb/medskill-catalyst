@@ -65,6 +65,14 @@ export const FIELD_KEYS = [
   "expiry_date",
   "certificate_id",
   "verify_url",
+  // Internship completion (credential type INTERNSHIP_COMPLETION).
+  "internship_title",
+  "department",
+  "start_date",
+  "end_date",
+  "internship_period",
+  "duration",
+  "total_hours",
 ] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
 
@@ -82,12 +90,23 @@ export const fieldConfigSchema = z.object({
   fields: z
     .object({
       learner_name: textBoxSchema,
-      program_name: textBoxSchema,
-      completion_date: textBoxSchema,
+      /** Required for course completions (missingRequiredFields); optional for internships, whose ribbon names the type. */
+      program_name: textBoxSchema.optional(),
+      /** Required for course completions (missingRequiredFields); an internship prints its period instead. */
+      completion_date: textBoxSchema.optional(),
       issue_date: textBoxSchema.optional(),
       expiry_date: textBoxSchema.optional(),
       certificate_id: textBoxSchema,
       verify_url: textBoxSchema.optional(),
+      internship_title: textBoxSchema.optional(),
+      department: textBoxSchema.optional(),
+      start_date: textBoxSchema.optional(),
+      end_date: textBoxSchema.optional(),
+      /** "1 June 2026 – 31 August 2026" in one box. */
+      internship_period: textBoxSchema.optional(),
+      duration: textBoxSchema.optional(),
+      /** Printed only when total hours were supplied. */
+      total_hours: textBoxSchema.optional(),
     })
     .strict(),
   qr: qrBoxSchema,
@@ -147,5 +166,43 @@ export const DEV_TEMPLATE_FIELD_CONFIG: FieldConfig = fieldConfigSchema.parse({
   },
   qr: { x: 718, y: 50, size: 76, errorCorrection: "M", color: "#0A2A43" },
 });
+
+/** Development layout for INTERNSHIP_COMPLETION programs, until the approved internship artwork exists. */
+export const DEV_INTERNSHIP_TEMPLATE_FIELD_CONFIG: FieldConfig = fieldConfigSchema.parse({
+  page: { width: 842, height: 595 },
+  // Laid out around the built-in background's static lines ("Presented to" at
+  // y 372, "For successfully completing" at y 272): the internship title takes
+  // the course layout's program slot directly under the latter.
+  fields: {
+    learner_name: { x: 70, y: 300, width: 520, height: 64, font: std("Times-Bold"), size: 40, minSize: 20, maxLines: 2, lineHeight: 1.1, align: "left", color: "#0A2A43" },
+    internship_title: { x: 70, y: 226, width: 520, height: 40, font: std("Helvetica-Bold"), size: 18, minSize: 11, maxLines: 2, align: "left", color: "#0F1B27" },
+    department: { x: 70, y: 208, width: 520, height: 16, font: std("Helvetica"), size: 11, minSize: 8, align: "left", color: "#5A6B7B", prefix: "Department: " },
+    program_name: { x: 70, y: 190, width: 520, height: 16, font: std("Helvetica"), size: 11, minSize: 8, align: "left", color: "#5A6B7B" },
+    internship_period: { x: 70, y: 168, width: 520, height: 18, font: std("Helvetica"), size: 11, minSize: 8, align: "left", color: "#0F1B27" },
+    duration: { x: 70, y: 150, width: 260, height: 16, font: std("Helvetica-Bold"), size: 11, minSize: 8, align: "left", color: "#0F1B27", prefix: "Duration: " },
+    total_hours: { x: 330, y: 150, width: 260, height: 16, font: std("Helvetica"), size: 11, minSize: 8, align: "left", color: "#0F1B27", prefix: "Total: " },
+    issue_date: { x: 70, y: 128, width: 520, height: 18, font: std("Helvetica"), size: 11, minSize: 9, align: "left", color: "#5A6B7B", prefix: "Issued on " },
+    certificate_id: { x: 560, y: 64, width: 150, height: 14, font: std("Courier-Bold"), size: 9, minSize: 7, align: "right", color: "#0A2A43", prefix: "ID  " },
+    verify_url: { x: 440, y: 80, width: 270, height: 12, font: std("Helvetica"), size: 7, minSize: 5, align: "right", color: "#00589E" },
+  },
+  qr: { x: 718, y: 50, size: 76, errorCorrection: "M", color: "#0A2A43" },
+});
+
+/**
+ * Fields a template MUST place for a credential type, checked when a template
+ * is activated. An internship certificate that doesn't say what the internship
+ * was, or when, is not a usable certificate.
+ */
+export function missingRequiredFields(type: string, config: FieldConfig): string[] {
+  const f = config.fields;
+  if (type !== "INTERNSHIP_COMPLETION") {
+    return [...(f.program_name ? [] : ["program name"]), ...(f.completion_date ? [] : ["completion date"])];
+  }
+  const missing: string[] = [];
+  if (!f.internship_title) missing.push("internship name (internship_title field)");
+  if (!f.internship_period && !(f.start_date && f.end_date)) missing.push("internship dates (period, or start and end)");
+  if (!f.duration) missing.push("duration");
+  return missing;
+}
 
 export const DEV_TEMPLATE_BACKGROUND: Background = { kind: "builtin-dev" };

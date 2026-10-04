@@ -42,7 +42,7 @@ export async function staff(role: StaffRole, extra: { clerk_user_id?: string; is
 }
 
 /** A program with a code, a cohort and an ACTIVE development template. */
-export async function program(opts: { code?: string; validityMonths?: number | null; anchor?: string } = {}) {
+export async function program(opts: { code?: string; validityMonths?: number | null; anchor?: string; credentialType?: "COURSE_COMPLETION" | "INTERNSHIP_COMPLETION" } = {}) {
   const admin = await staff("ADMIN");
   const code = opts.code ?? `T${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
   const course = await db.course.create({
@@ -53,6 +53,7 @@ export async function program(opts: { code?: string; validityMonths?: number | n
       code,
       validity_months: opts.validityMonths ?? null,
       validity_anchor: opts.anchor ?? "COMPLETION",
+      credential_type: opts.credentialType ?? "COURSE_COMPLETION",
     },
   });
   const batch = await db.batch.create({ data: { course_id: course.id, name: "Cohort A" } });

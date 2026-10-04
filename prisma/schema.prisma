@@ -384,6 +384,8 @@ model Course {
   validity_anchor   String   @default("COMPLETION")
   /// Program title as printed on certificates / verification page (defaults to name).
   certificate_title String?
+  /// The one credential type this program issues. Fixed once it has issued (DB trigger).
+  credential_type   CredentialType @default(COURSE_COMPLETION)
 
   batches        Batch[]
   interested_leads Lead[]
@@ -585,6 +587,13 @@ model WebhookEvent {
 // issue, terminal REVOKED/SUPERSEDED, append-only events, frozen active templates.
 // ─────────────────────────────────────────────────────────────
 
+/// Credential types (2026-10-04). Add a value with an additive migration + a
+/// registry entry in src/modules/credentials/credential-types.ts.
+enum CredentialType {
+  COURSE_COMPLETION
+  INTERNSHIP_COMPLETION
+}
+
 enum CredentialStatus {
   ISSUING
   VALID
@@ -686,6 +695,10 @@ model Credential {
   learner_name       String
   program_name       String
   completion_date    DateTime         @db.Date
+  /// Snapshot of the program's type. Immutable.
+  credential_type    CredentialType   @default(COURSE_COMPLETION)
+  /// Type-specific details (e.g. internship title/dates/duration), validated by the type registry. Frozen once issued.
+  details            Json             @default("{}")
   /// Used for the duplicate rule when there is no cohort.
   completion_context String?
   issued_at          DateTime         @db.Timestamptz(6)
@@ -726,6 +739,7 @@ model Credential {
   @@index([status])
   @@index([issued_at(sort: Desc)])
   @@index([created_at(sort: Desc)])
+  @@index([credential_type, issued_at(sort: Desc)])
   @@map("credentials")
 }
 
@@ -779,6 +793,7 @@ model CredentialBulkJob {
   file_sha256     String
   status          CredentialBulkJobStatus @default(VALIDATED)
   send_email      Boolean                 @default(true)
+  credential_type CredentialType          @default(COURSE_COMPLETION)
   total_rows      Int                     @default(0)
   created_by_id   String
   confirmed_by_id String?

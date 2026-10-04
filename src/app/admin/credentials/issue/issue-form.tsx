@@ -3,8 +3,21 @@
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { issueAction, planIssueAction, type PlanState } from "../actions";
+import { CREDENTIAL_TYPE_DEFINITIONS, CREDENTIAL_TYPES, INTERNSHIP_MODE_LABELS, INTERNSHIP_MODES, type CredentialType } from "@/src/modules/credentials/credential-types";
+import { calendarDuration } from "@/src/modules/credentials/duration";
+import { parseISODate } from "@/src/modules/credentials/dates";
 
-type Program = { id: string; name: string; ready: boolean; reason: string | null; cohorts: { id: string; name: string }[] };
+type Program = { id: string; name: string; type: CredentialType; ready: boolean; reason: string | null; cohorts: { id: string; name: string }[] };
+
+/** The same calculation the server snapshots; shown live so nobody has to work it out. */
+function durationPreview(start: string, end: string): { ok: true; label: string; days: number } | { ok: false; message: string } | null {
+  const s = parseISODate(start);
+  const e = parseISODate(end);
+  if (!s || !e) return null;
+  if (e.getTime() < s.getTime()) return { ok: false, message: "The end date is before the start date." };
+  const d = calendarDuration(s, e);
+  return { ok: true, label: d.label, days: d.days };
+}
 
 const input =
   "h-10 w-full rounded-msc border border-brand-navy/15 bg-surface px-3 text-sm text-ink focus-visible:border-brand-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue/20 disabled:bg-canvas";
@@ -31,7 +44,12 @@ function SubmitButton({
 export function IssueForm({ programs, today }: { programs: Program[]; today: string }) {
   const [state, review, reviewing] = useActionState<PlanState, FormData>(planIssueAction, { status: "idle" });
   const formRef = useRef<HTMLFormElement>(null);
+  const [type, setType] = useState<CredentialType>("COURSE_COMPLETION");
   const [courseId, setCourseId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const duration = durationPreview(startDate, endDate);
+  const typePrograms = programs.filter((p) => p.type === type);
   // One idempotency key per reviewed submission: a double-click or retried
   // request reuses it and can never create a second credential. Any edit
   // produces a new key and requires a fresh review.
@@ -51,6 +69,37 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
     >
       <input type="hidden" name="idempotencyKey" value={key} />
       <div className="space-y-4 rounded-msc-lg bg-surface p-5 shadow-msc-sm">
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-semibold text-brand-navy">Credential type</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {CREDENTIAL_TYPES.map((t) => {
+              const available = programs.some((p) => p.type === t);
+              return (
+                <label
+                  key={t}
+                  className={`flex cursor-pointer items-start gap-3 rounded-msc border p-3 text-sm ${type === t ? "border-brand-blue bg-brand-blue/5" : "border-brand-navy/15"} ${available ? "" : "cursor-not-allowed opacity-60"}`}
+                >
+                  <input
+                    type="radio"
+                    name="credentialType"
+                    value={t}
+                    checked={type === t}
+                    disabled={!available}
+                    onChange={() => {
+                      setType(t);
+                      setCourseId("");
+                    }}
+                    className="mt-0.5 h-4 w-4 accent-brand-blue"
+                  />
+                  <span>
+                    <span className="block font-semibold text-ink">{CREDENTIAL_TYPE_DEFINITIONS[t].label}</span>
+                    <span className="block text-xs text-muted">{available ? CREDENTIAL_TYPE_DEFINITIONS[t].publicLabel : "No program issues this type yet"}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
             <label htmlFor="fullName" className="text-sm font-semibold text-brand-navy">Learner full name, as it should appear on the certificate</label>
@@ -64,7 +113,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
             <label htmlFor="courseId" className="text-sm font-semibold text-brand-navy">Program</label>
             <select id="courseId" name="courseId" required value={courseId} onChange={(e) => setCourseId(e.target.value)} className={input}>
               <option value="">Choose a program</option>
-              {programs.map((p) => (
+              {typePrograms.map((p) => (
                 <option key={p.id} value={p.id} disabled={!p.ready}>
                   {p.name}
                   {p.reason ? ` (${p.reason})` : ""}
@@ -81,10 +130,73 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
               ))}
             </select>
           </div>
-          <div className="space-y-1.5">
-            <label htmlFor="completionDate" className="text-sm font-semibold text-brand-navy">Completion date</label>
-            <input id="completionDate" name="completionDate" type="date" required max={today} className={input} />
-          </div>
+          {type === "COURSE_COMPLETION" ? (
+            <div className="space-y-1.5">
+              <label htmlFor="completionDate" className="text-sm font-semibold text-brand-navy">Completion date</label>
+              <input id="completionDate" name="completionDate" type="date" required max={today} className={input} />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label htmlFor="internshipTitle" className="text-sm font-semibold text-brand-navy">Internship name</label>
+                <input id="internshipTitle" name="internshipTitle" required minLength={2} maxLength={120} autoComplete="off" placeholder="Type the internship name, e.g. Clinical Research Internship" className={input} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label htmlFor="department" className="text-sm font-semibold text-brand-navy">
+                  Department / specialization <span className="font-normal text-muted">(optional)</span>
+                </label>
+                <input id="department" name="department" maxLength={120} autoComplete="off" className={input} />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="startDate" className="text-sm font-semibold text-brand-navy">Start date</label>
+                <input id="startDate" name="startDate" type="date" required max={today} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={input} />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="endDate" className="text-sm font-semibold text-brand-navy">End date</label>
+                <input id="endDate" name="endDate" type="date" required min={startDate || undefined} max={today} value={endDate} onChange={(e) => setEndDate(e.target.value)} className={input} />
+              </div>
+              <div className="sm:col-span-2" aria-live="polite">
+                <p className="text-sm font-semibold text-brand-navy">Duration</p>
+                {duration === null && <p className="mt-1 text-sm text-muted">Calculated from the start and end dates.</p>}
+                {duration?.ok === false && <p className="mt-1 text-sm text-danger">{duration.message}</p>}
+                {duration?.ok && (
+                  <p className="mt-1 text-sm text-ink">
+                    <span className="font-semibold">{duration.label}</span> <span className="text-muted">({duration.days} calendar days, calculated, not editable)</span>
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="totalHours" className="text-sm font-semibold text-brand-navy">
+                  Total hours <span className="font-normal text-muted">(optional)</span>
+                </label>
+                <input id="totalHours" name="totalHours" type="number" min={0.5} max={5000} step={0.5} inputMode="decimal" className={input} />
+                <p className="text-xs text-muted">Only if recorded. Never estimated from the dates.</p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="supervisor" className="text-sm font-semibold text-brand-navy">
+                  Supervisor <span className="font-normal text-muted">(optional, internal)</span>
+                </label>
+                <input id="supervisor" name="supervisor" maxLength={120} autoComplete="off" className={input} />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="mode" className="text-sm font-semibold text-brand-navy">
+                  Mode <span className="font-normal text-muted">(optional)</span>
+                </label>
+                <select id="mode" name="mode" className={input} defaultValue="">
+                  <option value="">Not stated</option>
+                  {INTERNSHIP_MODES.map((m) => (
+                    <option key={m} value={m}>{INTERNSHIP_MODE_LABELS[m]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="location" className="text-sm font-semibold text-brand-navy">
+                  Location <span className="font-normal text-muted">(optional)</span>
+                </label>
+                <input id="location" name="location" maxLength={120} autoComplete="off" className={input} />
+              </div>
+            </>
+          )}
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-ink">
             <input type="checkbox" name="sendEmail" className="h-4 w-4 accent-brand-blue" />
             Email the learner after issuing
@@ -135,9 +247,10 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
               {[
                 ["Name on certificate", state.summary.learnerName],
                 ["Email", state.summary.email],
+                ["Type", state.summary.credentialType],
                 ["Program", state.summary.program],
                 ["Cohort", state.summary.cohort ?? "—"],
-                ["Completed", state.summary.completionDate],
+                ...(state.summary.internship ?? [["Completed", state.summary.completionDate]]),
                 ["Issue date", state.summary.issueDate],
                 ["Expires", state.summary.expires],
                 ["Template", state.summary.template],
@@ -156,6 +269,16 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
                 ))}
               </ul>
             )}
+            <button
+              type="submit"
+              formAction="/api/admin/credentials/preview"
+              formMethod="post"
+              formEncType="multipart/form-data"
+              formTarget="_blank"
+              className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-pill border border-brand-navy/15 bg-surface text-sm font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue"
+            >
+              Preview certificate (PDF)
+            </button>
             <SubmitButton
               formAction={issueAction}
               className="mt-5 inline-flex h-11 w-full items-center justify-center rounded-pill bg-brand-blue text-sm font-semibold text-white shadow-msc-sm hover:bg-brand-navy disabled:opacity-60"

@@ -12,6 +12,7 @@ import { DEV_TEMPLATE_FIELD_CONFIG } from "@/src/modules/credentials/template-co
 import { fitText } from "@/src/modules/credentials/text-fit";
 import { credentialEmail } from "@/src/modules/credentials/email";
 import { emailMode, publicBaseUrl } from "@/src/modules/credentials/config";
+import { buildInternshipDetails } from "@/src/modules/credentials/credential-types";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -25,6 +26,8 @@ describe("public credential payload", () => {
     issued_at: new Date("2026-09-24T20:00:00Z"),
     expires_at: null,
     status: "VALID" as const,
+    credential_type: "COURSE_COMPLETION" as const,
+    details: {},
     // Private fields that must never leak even if a caller passes a full row:
     email: "priya@example.com",
     id: "0b7c1f1e-0000-4000-8000-000000000000",
@@ -50,6 +53,37 @@ describe("public credential payload", () => {
   it("returns nothing for credentials that are not public", () => {
     expect(toPublicCredential({ ...row, status: "ISSUING" })).toBeNull();
     expect(toPublicCredential({ ...row, status: "FAILED" })).toBeNull();
+  });
+
+  it("labels the type and carries no internship block for a course", () => {
+    const pub = toPublicCredential(row)!;
+    expect(pub.credentialType).toBe("COURSE_COMPLETION");
+    expect(pub.credentialTypeLabel).toBe("Course Completion Certificate");
+    expect(pub.internship).toBeNull();
+  });
+
+  it("publishes an internship's approved details and nothing private", () => {
+    const details = buildInternshipDetails({
+      internshipTitle: "Clinical Research Intern",
+      department: "Clinical Operations",
+      startDate: "2026-06-01",
+      endDate: "2026-08-31",
+      totalHours: 480,
+      supervisor: "Dr. Secret Supervisor",
+      mode: "ON_SITE",
+      location: "Private Hospital Pune",
+    });
+    const pub = toPublicCredential({ ...row, credential_type: "INTERNSHIP_COMPLETION", details })!;
+    expect(pub.credentialTypeLabel).toBe("Internship Completion Certificate");
+    expect(pub.internship).toEqual({
+      internshipTitle: "Clinical Research Intern",
+      department: "Clinical Operations",
+      startDate: "2026-06-01",
+      endDate: "2026-08-31",
+      duration: "3 Months",
+    });
+    const json = JSON.stringify(pub);
+    for (const secret of ["Secret Supervisor", "Pune", "ON_SITE", "480", "priya@example.com"]) expect(json).not.toContain(secret);
   });
 
   it("offers the PDF only for VALID/EXPIRED", () => {

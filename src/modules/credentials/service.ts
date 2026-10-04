@@ -15,7 +15,16 @@ import { completionContext, dedupeKey } from "./dedupe";
 import { credentialEmail } from "./email";
 import { CredentialError, uniqueViolation } from "./errors";
 import { generateCertificateId, generateVerificationToken } from "./identifiers";
-import { preflightCertificate, RenderError, renderCertificate, type CertificateData } from "./render";
+import {
+  buildInternshipDetails,
+  CREDENTIAL_TYPE_DEFINITIONS,
+  credentialTypeSchema,
+  internshipDedupeContext,
+  storedInternshipDetailsSchema,
+  type CredentialType,
+  type InternshipDetails,
+} from "./credential-types";
+import { preflightCertificate, RenderError, renderCertificate, stampPreview, type CertificateData } from "./render";
 import { computeExpiresAt } from "./status";
 import { certificatePdfKey, credentialStorage, type CredentialStorage } from "./storage";
 import { parseTemplateSpec } from "./template-config";
@@ -66,7 +75,12 @@ export const issueInputSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email").max(254),
   courseId: z.string().min(1, "Choose a program"),
   batchId: z.string().min(1).nullable().optional(),
-  completionDate: isoDate,
+  /** Course completions only. An internship completes on its end date. */
+  completionDate: isoDate.optional(),
+  /** What the admin chose first; must match the program's type. */
+  credentialType: credentialTypeSchema.optional(),
+  /** INTERNSHIP_COMPLETION details, validated by the type registry in planIssue. */
+  internship: z.unknown().optional(),
   templateId: z.string().uuid().optional(),
   sendEmail: z.boolean().default(true),
   /** Client-generated per form submission / bulk row. Retries reuse it. */
@@ -82,6 +96,12 @@ export type IssuePlan = {
   completionDate: Date;
   issueDate: Date;
   expiresAt: Date | null;
+  credentialType: CredentialType;
+  /** Snapshot stored in credentials.details: {} for course completions. */
+  details: InternshipDetails | Record<string, never>;
+  internship: InternshipDetails | null;
+  /** The type's duplicate identity (internships: title + dates), else null. */
+  typeContext: string | null;
   dedupe: { key: string | null; existingCertificateId: string | null; existingCredentialId: string | null };
   warnings: string[];
 };
@@ -130,6 +150,60 @@ function assetLoader(storage: CredentialStorage) {
   return (path: string) => storage.get(path);
 }
 
+// ── Credential types ──────────────────────────────────────────────
+
+/** Validate internship input through the type registry; registry errors become field-level validation errors. */
+function parseInternship(raw: unknown): InternshipDetails {
+  if (!raw || typeof raw !== "object") throw new CredentialError("Enter the internship details.", "VALIDATION");
+  try {
+    return buildInternshipDetails(raw as Parameters<typeof buildInternshipDetails>[0]);
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw new CredentialError(e.issues.map((i) => i.message).join("; "), "VALIDATION", { fields: e.issues.map((i) => i.path.join(".")) });
+    }
+    throw e;
+  }
+}
+
+function storedInternship(c: Pick<Credential, "credential_type" | "details">): InternshipDetails | null {
+  if (c.credential_type !== "INTERNSHIP_COMPLETION") return null;
+  return storedInternshipDetailsSchema.parse(c.details);
+}
+
+function typeContextOf(internship: InternshipDetails | null): string | null {
+  return internship ? internshipDedupeContext(internship) : null;
+}
+
+function internshipRenderData(d: InternshipDetails | null): CertificateData["internship"] {
+  if (!d) return undefined;
+  return {
+    title: d.internshipTitle,
+    department: d.department,
+    startDate: parseISODate(d.startDate)!,
+    endDate: parseISODate(d.endDate)!,
+    duration: d.duration.label,
+    totalHours: d.totalHours,
+  };
+}
+
+/** Everything printed comes from the credential's frozen snapshot, never from current program data. */
+function certificateDataOf(c: Credential): CertificateData {
+  return {
+    learnerName: c.learner_name,
+    programName: c.program_name,
+    completionDate: c.completion_date,
+    issueDate: indianDate(c.issued_at),
+    expiresOn: c.expires_at,
+    certificateId: c.certificate_id,
+    verifyUrl: verificationUrl(c.verification_token),
+    internship: internshipRenderData(storedInternship(c)),
+  };
+}
+
+function typeLabel(t: CredentialType) {
+  return CREDENTIAL_TYPE_DEFINITIONS[t].label.toLowerCase();
+}
+
 // ── Plan (validation + duplicate detection, no writes) ────────────
 
 /**
@@ -153,10 +227,20 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
 
   const template = await resolveTemplate(db, course.id, input.templateId);
 
-  const completionDate = parseISODate(input.completionDate);
+  const credentialType = course.credential_type as CredentialType;
+  if (input.credentialType && input.credentialType !== credentialType) {
+    throw new CredentialError(`This program issues ${typeLabel(credentialType)} certificates, not ${typeLabel(input.credentialType)}.`, "VALIDATION");
+  }
+  const internship = credentialType === "INTERNSHIP_COMPLETION" ? parseInternship(input.internship) : null;
+  const typeContext = typeContextOf(internship);
+
+  if (!internship && !input.completionDate) throw new CredentialError("Enter the completion date.", "VALIDATION");
+  const completionDate = internship ? parseISODate(internship.endDate) : parseISODate(input.completionDate!);
   if (!completionDate) throw new CredentialError("Completion date is not a real date.", "VALIDATION");
   const today = indianDate(now());
-  if (completionDate.getTime() > today.getTime()) throw new CredentialError("Completion date is in the future.", "VALIDATION");
+  if (completionDate.getTime() > today.getTime()) {
+    throw new CredentialError(internship ? "The internship end date is in the future." : "Completion date is in the future.", "VALIDATION");
+  }
   if (completionDate.getUTCFullYear() < 2020) throw new CredentialError("Completion date is implausibly early.", "VALIDATION");
 
   const issueDate = today;
@@ -176,7 +260,7 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
 
   let dedupe: IssuePlan["dedupe"] = { key: null, existingCertificateId: null, existingCredentialId: null };
   if (student) {
-    const key = dedupeKey({ studentId: student.id, courseId: course.id, batchId: batch?.id ?? null, completionDate });
+    const key = dedupeKey({ studentId: student.id, courseId: course.id, batchId: batch?.id ?? null, completionDate, typeContext });
     const existing = await db.credential.findFirst({
       where: { dedupe_key: key, status: { in: ["ISSUING", "VALID"] } },
       select: { id: true, certificate_id: true },
@@ -194,7 +278,11 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
     expiresOn: expiresAt,
     certificateId: generateCertificateId({ programCode: course.code, year: indianYear(now()) }),
     verifyUrl: verificationUrl("x".repeat(22)),
+    internship: internshipRenderData(internship),
   };
+  if (internship && !spec.fieldConfig.fields.internship_title) {
+    throw new CredentialError("This program's active template has no internship name field (internship_title). Upload an internship template version.", "CONFIG");
+  }
   const issues = await preflightCertificate(spec, sample, assetLoader(deps.storage));
   if (issues.length) {
     throw new CredentialError(
@@ -212,9 +300,38 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
     completionDate,
     issueDate,
     expiresAt,
+    credentialType,
+    details: internship ?? {},
+    internship,
+    typeContext,
     dedupe,
     warnings,
   };
+}
+
+/**
+ * "Certificate preview" in the issue workflow: the exact certificate that
+ * would be issued, with a sample ID, stamped PREVIEW. Writes nothing.
+ */
+export async function previewIssue(raw: IssueInput, deps: CredentialDeps = defaultDeps()): Promise<Uint8Array> {
+  const input = issueInputSchema.parse(raw);
+  const plan = await planIssue(input, deps);
+  const template = await deps.db.certificateTemplate.findUniqueOrThrow({ where: { id: plan.template.id } });
+  const out = await renderCertificate(
+    parseTemplateSpec(template),
+    {
+      learnerName: input.fullName,
+      programName: plan.course.title,
+      completionDate: plan.completionDate,
+      issueDate: plan.issueDate,
+      expiresOn: plan.expiresAt,
+      certificateId: generateCertificateId({ programCode: plan.course.code, year: plan.issueDate.getUTCFullYear() }),
+      verifyUrl: verificationUrl("PREVIEWxxxxxxxxxxxxxxx"),
+      internship: internshipRenderData(plan.internship),
+    },
+    assetLoader(deps.storage),
+  );
+  return stampPreview(out.bytes);
 }
 
 // ── Issue ─────────────────────────────────────────────────────────
@@ -245,8 +362,9 @@ export async function issueCredential(
     // collided with: that is our own submission, not a duplicate.
     const mine = await db.credential.findUnique({ where: { idempotency_key: input.idempotencyKey } });
     if (mine) return resumeExisting(mine, input, actor, deps);
+    const scope = plan.internship ? " for this internship (same title and dates)" : `for this program${plan.batch ? " and cohort" : " and completion date"}`;
     throw new CredentialError(
-      `This learner already has an active credential for this program${plan.batch ? " and cohort" : " and completion date"} (${plan.dedupe.existingCertificateId}). Use Reissue to correct it.`,
+      `This learner already has an active credential ${scope.trim()} (${plan.dedupe.existingCertificateId}). Use Reissue to correct it.`,
       "DUPLICATE",
       { certificateId: plan.dedupe.existingCertificateId, credentialId: plan.dedupe.existingCredentialId },
     );
@@ -259,7 +377,7 @@ export async function issueCredential(
         const student =
           (await findStudentByEmail(tx, input.email)) ??
           (await tx.student.create({ data: { full_name: input.fullName, email: input.email } }));
-        const key = dedupeKey({ studentId: student.id, courseId: plan.course.id, batchId: plan.batch?.id ?? null, completionDate: plan.completionDate });
+        const key = dedupeKey({ studentId: student.id, courseId: plan.course.id, batchId: plan.batch?.id ?? null, completionDate: plan.completionDate, typeContext: plan.typeContext });
         const c = await tx.credential.create({
           data: {
             certificate_id: generateCertificateId({ programCode: plan.course.code, year: plan.issueDate.getUTCFullYear() }),
@@ -272,7 +390,9 @@ export async function issueCredential(
             learner_name: input.fullName,
             program_name: plan.course.title,
             completion_date: plan.completionDate,
-            completion_context: completionContext(plan.batch?.id ?? null, plan.completionDate),
+            completion_context: plan.typeContext ?? completionContext(plan.batch?.id ?? null, plan.completionDate),
+            credential_type: plan.credentialType,
+            details: plan.details as Prisma.InputJsonValue,
             issued_at: deps.now(),
             expires_at: plan.expiresAt,
             status: "ISSUING",
@@ -282,6 +402,7 @@ export async function issueCredential(
           },
         });
         await recordEvent(tx, c.id, "ISSUE_REQUESTED", actor.id, {
+          credential_type: plan.credentialType,
           template_version: plan.template.version,
           send_email: input.sendEmail,
           source: opts.source ?? "SINGLE",
@@ -353,19 +474,7 @@ export async function renderAndFinalize(credentialId: string, actor: StaffUser, 
   try {
     const template = await db.certificateTemplate.findUniqueOrThrow({ where: { id: current.template_id } });
     const spec = parseTemplateSpec(template);
-    const out = await renderCertificate(
-      spec,
-      {
-        learnerName: current.learner_name,
-        programName: current.program_name,
-        completionDate: current.completion_date,
-        issueDate: indianDate(current.issued_at),
-        expiresOn: current.expires_at,
-        certificateId: current.certificate_id,
-        verifyUrl: verificationUrl(current.verification_token),
-      },
-      assetLoader(storage),
-    );
+    const out = await renderCertificate(spec, certificateDataOf(current), assetLoader(storage));
     const path = certificatePdfKey(current.id, out.sha256);
     await storage.put(path, out.bytes, "application/pdf");
     pdf = { path, sha256: out.sha256 };
@@ -391,7 +500,13 @@ export async function renderAndFinalize(credentialId: string, actor: StaffUser, 
           await tx.credential.update({ where: { id: parent.id }, data: { status: "SUPERSEDED" } });
           await recordEvent(tx, parent.id, "SUPERSEDED", actor.id, { superseded_by: current.certificate_id });
         }
-        dedupe = dedupeKey({ studentId: current.student_id, courseId: current.course_id, batchId: current.batch_id, completionDate: current.completion_date });
+        dedupe = dedupeKey({
+          studentId: current.student_id,
+          courseId: current.course_id,
+          batchId: current.batch_id,
+          completionDate: current.completion_date,
+          typeContext: typeContextOf(storedInternship(current)),
+        });
       }
       const done = await tx.credential.update({
         where: { id: credentialId },
@@ -473,6 +588,10 @@ export async function deliverCredentialEmail(
     verifyUrl: verificationUrl(c.verification_token),
     downloadUrl: certificateDownloadUrl(c.verification_token),
     isResend: kind === "RESEND",
+    internship: (() => {
+      const i = internshipRenderData(storedInternship(c));
+      return i ? { title: i.title, startDate: i.startDate, endDate: i.endDate, duration: i.duration } : null;
+    })(),
   });
   let result: SendEmailResult;
   try {
@@ -543,6 +662,8 @@ export const reissueSchema = z.object({
     .pipe(z.string().min(2).max(120))
     .optional(),
   completionDate: isoDate.optional(),
+  /** Internship corrections. Omitted fields keep the original's values; the duration is recomputed. */
+  internship: z.record(z.string(), z.unknown()).optional(),
   batchId: z.string().min(1).nullable().optional(),
   templateId: z.string().uuid().optional(),
   reason: z.string().trim().min(5, "Give a reason for the reissue (at least 5 characters)").max(1000),
@@ -583,7 +704,19 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
     if (!b || b.course_id !== parent.course_id) throw new CredentialError("That cohort does not belong to this program.", "VALIDATION");
   }
   const template = await resolveTemplate(db, parent.course_id, input.templateId);
-  const completionDate = input.completionDate ? parseISODate(input.completionDate) : parent.completion_date;
+  const original = storedInternship(parent);
+  let internship: InternshipDetails | null = null;
+  if (original) {
+    const { duration: _computed, ...base } = original;
+    void _computed;
+    internship = parseInternship({ ...base, ...(input.internship ?? {}) });
+  }
+  const typeContext = typeContextOf(internship);
+  const completionDate = internship
+    ? parseISODate(internship.endDate)
+    : input.completionDate
+      ? parseISODate(input.completionDate)
+      : parent.completion_date;
   if (!completionDate) throw new CredentialError("Completion date is not a real date.", "VALIDATION");
   if (completionDate.getTime() > indianDate(deps.now()).getTime()) throw new CredentialError("Completion date is in the future.", "VALIDATION");
   if (!parent.course.code) throw new CredentialError("This program has no program code.", "CONFIG");
@@ -608,6 +741,7 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
       expiresOn: expiresAt,
       certificateId: generateCertificateId({ programCode: parent.course.code, year: issueDate.getUTCFullYear() }),
       verifyUrl: verificationUrl("x".repeat(22)),
+      internship: internshipRenderData(internship),
     },
     assetLoader(deps.storage),
   );
@@ -629,7 +763,9 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
             learner_name: learnerName,
             program_name: programName,
             completion_date: completionDate,
-            completion_context: completionContext(batchId, completionDate),
+            completion_context: typeContext ?? completionContext(batchId, completionDate),
+            credential_type: parent.credential_type,
+            details: (internship ?? {}) as Prisma.InputJsonValue,
             issued_at: deps.now(),
             expires_at: expiresAt,
             status: "ISSUING",
@@ -640,6 +776,7 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
           },
         });
         await recordEvent(tx, c.id, "ISSUE_REQUESTED", actor.id, {
+          credential_type: parent.credential_type,
           reissue_of: parent.certificate_id,
           reason: input.reason,
           template_version: template.version,

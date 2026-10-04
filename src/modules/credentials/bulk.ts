@@ -10,6 +10,8 @@ import { defaultDeps, issueCredential, type CredentialDeps } from "./service";
 import { parseTemplateSpec } from "./template-config";
 import { generateCertificateId } from "./identifiers";
 import { verificationUrl } from "./config";
+import { buildInternshipDetails, internshipDedupeContext, type CredentialType, type InternshipDetails } from "./credential-types";
+import { z } from "zod";
 
 /**
  * Bulk (cohort) issuance:
@@ -34,7 +36,26 @@ export const BULK_COLUMNS = {
   ignored: ["issue_date", "expires_at"] as const,
 };
 
-export function bulkTemplateCsv(programCode = "FND"): string {
+/** INTERNSHIP_COMPLETION programs: the cohort import columns (PRD addendum 2026-10-04). */
+export const INTERNSHIP_BULK_COLUMNS = {
+  required: ["full_name", "email", "internship_name", "start_date", "end_date"] as const,
+  optional: ["department", "total_hours", "supervisor", "mode", "location", "program_code", "cohort", "external_learner_ref"] as const,
+  forbidden: BULK_COLUMNS.forbidden,
+  /** An internship's duration and completion are computed from its dates; supplied values are ignored. */
+  ignored: ["issue_date", "expires_at", "completion_date", "duration"] as const,
+};
+
+export function bulkColumnsFor(type: CredentialType) {
+  return type === "INTERNSHIP_COMPLETION" ? INTERNSHIP_BULK_COLUMNS : BULK_COLUMNS;
+}
+
+export function bulkTemplateCsv(programCode = "FND", type: CredentialType = "COURSE_COMPLETION"): string {
+  if (type === "INTERNSHIP_COMPLETION") {
+    return [
+      "full_name,email,internship_name,department,start_date,end_date,total_hours,supervisor,mode,location,cohort,external_learner_ref",
+      `Aarav Mehta,aarav.mehta@example.com,Clinical Research Intern,Clinical Operations,01/06/2026,31/08/2026,480,Dr. A. Sharma,On-site,Pune,,`,
+    ].join("\r\n") + "\r\n";
+  }
   return [
     "full_name,email,completion_date,program_code,cohort,external_learner_ref",
     `Priya Raman,priya.raman@example.com,15/07/2026,${programCode},Cohort 1 — September 2026,`,
@@ -65,7 +86,43 @@ const HEADER_ALIASES: Record<string, string> = {
   token: "token",
   issue_date: "issue_date",
   expires_at: "expires_at",
+  // Internship completion columns.
+  // "internship_name" is the documented column; older files with internship_title keep working.
+  internship_name: "internship_name",
+  internship_title: "internship_name",
+  internship: "internship_name",
+  title: "internship_name",
+  role: "internship_name",
+  department: "department",
+  specialization: "department",
+  specialisation: "department",
+  area: "department",
+  start_date: "start_date",
+  start: "start_date",
+  from: "start_date",
+  end_date: "end_date",
+  end: "end_date",
+  to: "end_date",
+  total_hours: "total_hours",
+  hours: "total_hours",
+  supervisor: "supervisor",
+  mentor: "supervisor",
+  mode: "mode",
+  work_mode: "mode",
+  location: "location",
+  city: "location",
+  duration: "duration",
 };
+
+/** "On-site", "onsite", "on site" → ON_SITE. Anything unrecognised is refused, never guessed. */
+export function normalizeMode(v: string): "ON_SITE" | "REMOTE" | "HYBRID" | null | "INVALID" {
+  const s = v.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (!s) return null;
+  if (s === "onsite" || s === "inperson" || s === "office") return "ON_SITE";
+  if (s === "remote" || s === "online" || s === "virtual") return "REMOTE";
+  if (s === "hybrid") return "HYBRID";
+  return "INVALID";
+}
 
 const normHeader = (h: string) =>
   h.replace(/^﻿/, "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -187,10 +244,13 @@ const normText = (v: Cell) => (v instanceof Date ? "" : (v ?? "").normalize("NFC
 export type RowInput = {
   fullName: string;
   email: string;
+  /** Course completions; for internships this is the end date. */
   completionDate: string;
   batchId: string | null;
   cohortName: string | null;
   externalRef: string | null;
+  /** INTERNSHIP_COMPLETION rows: validated details, with the computed duration for the preview. */
+  internship?: InternshipDetails | null;
 };
 export type RowMessage = { level: "error" | "warning"; text: string };
 
@@ -207,20 +267,22 @@ export async function createBulkJob(
   if (!course.code) throw new CredentialError("This program has no program code yet.", "CONFIG");
   const template = await db.certificateTemplate.findFirst({ where: { course_id: course.id, status: "ACTIVE" } });
   if (!template) throw new CredentialError("This program has no active certificate template.", "CONFIG");
+  const credentialType = course.credential_type as CredentialType;
+  const columns = bulkColumnsFor(credentialType);
   if (opts.defaultBatchId && !course.batches.some((b) => b.id === opts.defaultBatchId)) {
     throw new CredentialError("That cohort does not belong to this program.", "VALIDATION");
   }
 
   const sheet = await parseUpload(opts.bytes);
   const headers = sheet.headers.map((h) => HEADER_ALIASES[normHeader(h)] ?? normHeader(h));
-  const forbidden = headers.filter((h) => (BULK_COLUMNS.forbidden as readonly string[]).includes(h));
+  const forbidden = headers.filter((h) => (columns.forbidden as readonly string[]).includes(h));
   if (forbidden.length) {
     throw new CredentialError(`Remove the ${forbidden.join(", ")} column: certificate IDs and tokens are generated by the system.`, "VALIDATION");
   }
-  const missing = BULK_COLUMNS.required.filter((r) => !headers.includes(r));
+  const missing = (columns.required as readonly string[]).filter((r) => !headers.includes(r));
   if (missing.length) throw new CredentialError(`Missing required column(s): ${missing.join(", ")}. Download the template for the exact format.`, "VALIDATION");
   if (sheet.rows.length === 0) throw new CredentialError("The file has a header row but no learners.", "VALIDATION");
-  const ignored = headers.filter((h) => (BULK_COLUMNS.ignored as readonly string[]).includes(h));
+  const ignored = headers.filter((h) => (columns.ignored as readonly string[]).includes(h));
   const col = (name: string) => headers.indexOf(name);
 
   const spec = parseTemplateSpec(template);
@@ -237,7 +299,35 @@ export async function createBulkJob(
     const messages: RowMessage[] = [];
     const fullName = normText(get("full_name"));
     const email = normText(get("email")).toLowerCase();
-    const completionDate = normalizeDate(get("completion_date"));
+
+    // Internship rows: the registry validates and computes the duration; the end date is the completion date.
+    let internship: InternshipDetails | null = null;
+    if (credentialType === "INTERNSHIP_COMPLETION") {
+      const start = normalizeDate(get("start_date"));
+      const end = normalizeDate(get("end_date"));
+      const mode = normalizeMode(normText(get("mode")));
+      if (!start) messages.push({ level: "error", text: "Start date must be YYYY-MM-DD or DD/MM/YYYY." });
+      if (!end) messages.push({ level: "error", text: "End date must be YYYY-MM-DD or DD/MM/YYYY." });
+      if (mode === "INVALID") messages.push({ level: "error", text: "Mode must be On-site, Remote or Hybrid." });
+      if (start && end && mode !== "INVALID") {
+        try {
+          internship = buildInternshipDetails({
+            internshipTitle: normText(get("internship_name")),
+            department: normText(get("department")),
+            startDate: start,
+            endDate: end,
+            totalHours: normText(get("total_hours")),
+            supervisor: normText(get("supervisor")),
+            mode,
+            location: normText(get("location")),
+          });
+        } catch (e) {
+          if (!(e instanceof z.ZodError)) throw e;
+          for (const issue of e.issues) messages.push({ level: "error", text: issue.message });
+        }
+      }
+    }
+    const completionDate = credentialType === "INTERNSHIP_COMPLETION" ? (internship?.endDate ?? null) : normalizeDate(get("completion_date"));
     const programCode = normText(get("program_code")).toUpperCase();
     const cohortName = normText(get("cohort")) || null;
     const externalRef = normText(get("external_learner_ref")).slice(0, 120) || null;
@@ -245,7 +335,9 @@ export async function createBulkJob(
     if (fullName.length < 2) messages.push({ level: "error", text: "Full name is missing." });
     if (fullName.length > 120) messages.push({ level: "error", text: "Full name is longer than 120 characters." });
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) messages.push({ level: "error", text: "Email is missing or invalid." });
-    if (!completionDate) messages.push({ level: "error", text: "Completion date must be YYYY-MM-DD or DD/MM/YYYY." });
+    if (credentialType === "INTERNSHIP_COMPLETION") {
+      if (completionDate && parseISODate(completionDate)!.getTime() > today.getTime()) messages.push({ level: "error", text: "The internship end date is in the future." });
+    } else if (!completionDate) messages.push({ level: "error", text: "Completion date must be YYYY-MM-DD or DD/MM/YYYY." });
     else if (parseISODate(completionDate)!.getTime() > today.getTime()) messages.push({ level: "error", text: "Completion date is in the future." });
     if (programCode && programCode !== course.code) messages.push({ level: "error", text: `Program code ${programCode} does not match ${course.code}.` });
 
@@ -255,9 +347,12 @@ export async function createBulkJob(
       if (!b) messages.push({ level: "error", text: `Cohort “${cohortName}” does not exist for this program.` });
       else batchId = b.id;
     }
-    if (ignored.length && i === 0) messages.push({ level: "warning", text: `Column(s) ${ignored.join(", ")} are ignored; issue and expiry dates are set by the system.` });
+    if (ignored.length && i === 0) {
+      messages.push({ level: "warning", text: `Column(s) ${ignored.join(", ")} are ignored; ${credentialType === "INTERNSHIP_COMPLETION" ? "duration and completion come from the start and end dates, and issue/expiry dates are set by the system" : "issue and expiry dates are set by the system"}.` });
+    }
 
-    const fileKey = `${email}|${batchId ?? `date:${completionDate}`}`;
+    const typeContext = internship ? internshipDedupeContext(internship) : null;
+    const fileKey = `${email}|${typeContext ?? batchId ?? `date:${completionDate}`}`;
     if (email && seen.has(fileKey)) messages.push({ level: "error", text: `Duplicate of row ${seen.get(fileKey)} in this file.` });
     else if (email) seen.set(fileKey, rowNumber);
 
@@ -267,7 +362,7 @@ export async function createBulkJob(
         if (student.full_name.trim().toLowerCase() !== fullName.toLowerCase()) {
           messages.push({ level: "warning", text: `Existing learner is named “${student.full_name}”; the certificate will show “${fullName}”.` });
         }
-        const key = dedupeKey({ studentId: student.id, courseId: course.id, batchId, completionDate: parseISODate(completionDate)! });
+        const key = dedupeKey({ studentId: student.id, courseId: course.id, batchId, completionDate: parseISODate(completionDate)!, typeContext });
         const existing = await db.credential.findFirst({ where: { dedupe_key: key, status: { in: ["ISSUING", "VALID"] } }, select: { certificate_id: true } });
         if (existing) messages.push({ level: "warning", text: `Already has active credential ${existing.certificate_id}. This row will be skipped as a duplicate.` });
       }
@@ -281,6 +376,16 @@ export async function createBulkJob(
           expiresOn: null,
           certificateId: generateCertificateId({ programCode: course.code, year: today.getUTCFullYear() }),
           verifyUrl: verificationUrl("x".repeat(22)),
+          internship: internship
+            ? {
+                title: internship.internshipTitle,
+                department: internship.department,
+                startDate: parseISODate(internship.startDate)!,
+                endDate: parseISODate(internship.endDate)!,
+                duration: internship.duration.label,
+                totalHours: internship.totalHours,
+              }
+            : undefined,
         },
         (p) => deps.storage.get(p),
       );
@@ -290,7 +395,7 @@ export async function createBulkJob(
     const validation = messages.some((m) => m.level === "error") ? "ERROR" : messages.some((m) => m.level === "warning") ? "WARNING" : "VALID";
     rows.push({
       row_number: rowNumber,
-      input: { fullName, email, completionDate: completionDate ?? "", batchId, cohortName, externalRef },
+      input: { fullName, email, completionDate: completionDate ?? "", batchId, cohortName, externalRef, internship },
       validation,
       messages,
     });
@@ -305,6 +410,7 @@ export async function createBulkJob(
         file_name: opts.fileName.slice(0, 200),
         file_sha256: createHash("sha256").update(opts.bytes).digest("hex"),
         send_email: opts.sendEmail,
+        credential_type: credentialType,
         total_rows: rows.length,
         created_by_id: actor.id,
       },
@@ -326,7 +432,7 @@ export async function createBulkJob(
       action: "BULK_JOB_VALIDATED",
       entity_type: "credential_bulk_job",
       entity_id: job.id,
-      after: { rows: rows.length, errors: rows.filter((r) => r.validation === "ERROR").length, file: job.file_name, sha256: job.file_sha256 },
+      after: { rows: rows.length, errors: rows.filter((r) => r.validation === "ERROR").length, file: job.file_name, sha256: job.file_sha256, credential_type: credentialType },
     },
   });
   return job;
@@ -404,7 +510,14 @@ export async function processBulkChunk(jobId: string, actor: StaffUser, deps: Cr
           email: input.email,
           courseId: job.course_id,
           batchId: input.batchId,
-          completionDate: input.completionDate,
+          ...(input.internship
+            ? (() => {
+                // The service recomputes the duration from the dates; only the inputs travel.
+                const { duration: _computed, ...details } = input.internship;
+                void _computed;
+                return { credentialType: "INTERNSHIP_COMPLETION" as const, internship: details };
+              })()
+            : { completionDate: input.completionDate }),
           templateId: job.template_id,
           sendEmail: job.send_email,
           idempotencyKey: `bulk:${jobId}:${row.row_number}`,
@@ -458,16 +571,29 @@ export async function bulkResultsCsv(jobId: string, includePrivate: boolean, dep
     orderBy: { row_number: "asc" },
     include: { credential: { select: { certificate_id: true, verification_token: true, status: true } } },
   });
-  const header = ["row", "full_name", ...(includePrivate ? ["email"] : []), "outcome", "certificate_id", "verification_url", "message"];
+  const job = await deps.db.credentialBulkJob.findUniqueOrThrow({ where: { id: jobId }, select: { credential_type: true } });
+  const intern = job.credential_type === "INTERNSHIP_COMPLETION";
+  const header = [
+    "row",
+    "full_name",
+    ...(includePrivate ? ["email"] : []),
+    ...(intern ? ["internship_name", "start_date", "end_date", "duration"] : []),
+    "outcome",
+    "certificate_id",
+    "verification_url",
+    "message",
+  ];
   const lines = [header.join(",")];
   for (const r of rows) {
     const input = r.input as unknown as RowInput;
     const messages = (r.messages as unknown as RowMessage[]).map((m) => m.text);
+    const i = input.internship;
     lines.push(
       [
         String(r.row_number),
         csvCell(input.fullName),
         ...(includePrivate ? [csvCell(input.email)] : []),
+        ...(intern ? [csvCell(i?.internshipTitle), csvCell(i?.startDate), csvCell(i?.endDate), csvCell(i?.duration.label)] : []),
         r.outcome,
         csvCell(r.credential?.status === "VALID" ? r.credential.certificate_id : ""),
         csvCell(r.credential?.status === "VALID" ? verificationUrl(r.credential.verification_token) : ""),

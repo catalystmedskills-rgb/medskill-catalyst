@@ -19,8 +19,18 @@ export function dedupeKey(opts: {
   courseId: string;
   batchId: string | null;
   completionDate: Date;
+  /**
+   * A credential type's own identity, when it has one (internships: title +
+   * start + end, see credential-types.ts). It replaces the cohort/date context,
+   * so one learner can hold two different internships from the same program.
+   */
+  typeContext?: string | null;
 }): string {
-  const context = opts.batchId ? `b:${opts.batchId}` : `c:${toISODate(opts.completionDate)}`;
+  const context = opts.typeContext
+    ? opts.typeContext
+    : opts.batchId
+      ? `b:${opts.batchId}`
+      : `c:${toISODate(opts.completionDate)}`;
   return `v1:${opts.studentId}:${opts.courseId}:${context}`;
 }
 

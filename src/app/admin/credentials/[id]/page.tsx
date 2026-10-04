@@ -6,7 +6,8 @@ import { can, Permission } from "@/src/lib/permissions";
 import { getCredentialDetail } from "@/src/modules/credentials/queries";
 import { derivePublicStatus } from "@/src/modules/credentials/status";
 import { verificationUrl } from "@/src/modules/credentials/config";
-import { toISODate } from "@/src/modules/credentials/dates";
+import { formatLongDate, parseISODate, toISODate } from "@/src/modules/credentials/dates";
+import { CREDENTIAL_TYPE_DEFINITIONS, INTERNSHIP_MODE_LABELS, INTERNSHIP_MODES, storedInternshipDetailsSchema } from "@/src/modules/credentials/credential-types";
 import { reissueAction, resendAction, retryAction, revokeAction } from "../actions";
 import { Card, CredentialStatusBadge, dangerBtn, EVENT_LABEL, Flash, fmtDate, fmtDateTime, inputCls, primaryBtn, secondaryBtn } from "../_ui";
 
@@ -41,6 +42,8 @@ export default async function CredentialDetail({ params, searchParams }: { param
 
   const priv = can(staff.role, Permission.CredentialsViewPrivate);
   const full = can(staff.role, Permission.AuditViewFull);
+  const internshipParsed = c.credential_type === "INTERNSHIP_COMPLETION" ? storedInternshipDetailsSchema.safeParse(c.details) : null;
+  const internship = internshipParsed?.success ? internshipParsed.data : null;
   const shared = isSharedIdentity(staff);
   const display = derivePublicStatus(c) ?? c.status;
   const url = verificationUrl(c.verification_token);
@@ -95,7 +98,22 @@ export default async function CredentialDetail({ params, searchParams }: { param
           <dl className="mt-2">
             <Item label="Status">{display}{c.status === "REVOKED" && c.revoked_at ? ` on ${fmtDateTime(c.revoked_at)} by ${c.revoked_by?.name ?? "—"}` : ""}</Item>
             {c.status === "REVOKED" && full && <Item label="Internal reason">{c.revocation_reason}</Item>}
-            <Item label="Completed">{fmtDate(c.completion_date)}</Item>
+            <Item label="Type">{CREDENTIAL_TYPE_DEFINITIONS[c.credential_type].label}</Item>
+            {internship ? (
+              <>
+                <Item label="Internship name">{internship.internshipTitle}</Item>
+                {internship.department && <Item label="Department">{internship.department}</Item>}
+                <Item label="Period">{formatLongDate(parseISODate(internship.startDate)!)} – {formatLongDate(parseISODate(internship.endDate)!)}</Item>
+                <Item label="Duration">{internship.duration.label} ({internship.duration.days} days, calculated)</Item>
+                <Item label="Total hours">{internship.totalHours ?? "Not stated"}</Item>
+                {priv && internship.supervisor && <Item label="Supervisor (internal)">{internship.supervisor}</Item>}
+                {(internship.mode || internship.location) && (
+                  <Item label="Mode / location">{[internship.mode ? INTERNSHIP_MODE_LABELS[internship.mode] : null, internship.location].filter(Boolean).join(", ")}</Item>
+                )}
+              </>
+            ) : (
+              <Item label="Completed">{fmtDate(c.completion_date)}</Item>
+            )}
             <Item label="Issued">{fmtDateTime(c.issued_at)}</Item>
             <Item label="Expires">{c.expires_at ? fmtDate(c.expires_at) : "Never"}</Item>
             {priv && <Item label="Learner email">{c.student.email}</Item>}
@@ -164,10 +182,58 @@ export default async function CredentialDetail({ params, searchParams }: { param
                   <span className="font-semibold text-brand-navy">Name on certificate</span>
                   <input name="fullName" defaultValue={c.learner_name} maxLength={120} className={inputCls} />
                 </label>
-                <label className="block space-y-1.5 text-sm">
-                  <span className="font-semibold text-brand-navy">Completion date</span>
-                  <input name="completionDate" type="date" defaultValue={toISODate(c.completion_date)} className={inputCls} />
-                </label>
+                {internship ? (
+                  <>
+                    <input type="hidden" name="credentialType" value="INTERNSHIP_COMPLETION" />
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-semibold text-brand-navy">Internship name</span>
+                      <input name="internshipTitle" defaultValue={internship.internshipTitle} required maxLength={120} className={inputCls} />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-semibold text-brand-navy">Department</span>
+                      <input name="department" defaultValue={internship.department ?? ""} maxLength={120} className={inputCls} />
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Start date</span>
+                        <input name="startDate" type="date" defaultValue={internship.startDate} required className={inputCls} />
+                      </label>
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">End date</span>
+                        <input name="endDate" type="date" defaultValue={internship.endDate} required className={inputCls} />
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted">The duration is recalculated from the dates.</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Total hours</span>
+                        <input name="totalHours" type="number" min={0.5} max={5000} step={0.5} defaultValue={internship.totalHours ?? ""} className={inputCls} />
+                      </label>
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Mode</span>
+                        <select name="mode" defaultValue={internship.mode ?? ""} className={inputCls}>
+                          <option value="">Not stated</option>
+                          {INTERNSHIP_MODES.map((m) => <option key={m} value={m}>{INTERNSHIP_MODE_LABELS[m]}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-semibold text-brand-navy">Location</span>
+                      <input name="location" defaultValue={internship.location ?? ""} maxLength={120} className={inputCls} />
+                    </label>
+                    {priv && (
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Supervisor (internal)</span>
+                        <input name="supervisor" defaultValue={internship.supervisor ?? ""} maxLength={120} className={inputCls} />
+                      </label>
+                    )}
+                  </>
+                ) : (
+                  <label className="block space-y-1.5 text-sm">
+                    <span className="font-semibold text-brand-navy">Completion date</span>
+                    <input name="completionDate" type="date" defaultValue={toISODate(c.completion_date)} className={inputCls} />
+                  </label>
+                )}
                 <label className="block space-y-1.5 text-sm">
                   <span className="font-semibold text-brand-navy">Cohort</span>
                   <select name="batchId" defaultValue="__keep__" className={inputCls}>
