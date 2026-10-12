@@ -592,6 +592,7 @@ model WebhookEvent {
 enum CredentialType {
   COURSE_COMPLETION
   INTERNSHIP_COMPLETION
+  OFFER_LETTER
 }
 
 enum CredentialStatus {

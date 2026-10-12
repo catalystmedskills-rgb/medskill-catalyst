@@ -12,11 +12,14 @@ export async function GET(req: Request) {
   } catch (e) {
     return new NextResponse("Unauthorized", { status: e instanceof AuthError ? e.status : 500 });
   }
-  const intern = new URL(req.url).searchParams.get("type") === "INTERNSHIP_COMPLETION";
-  return new NextResponse("﻿" + bulkTemplateCsv(intern ? "INT" : "FND", intern ? "INTERNSHIP_COMPLETION" : "COURSE_COMPLETION"), {
+  const t = new URL(req.url).searchParams.get("type");
+  const type = t === "INTERNSHIP_COMPLETION" || t === "OFFER_LETTER" ? t : "COURSE_COMPLETION";
+  const code = type === "INTERNSHIP_COMPLETION" ? "INT" : type === "OFFER_LETTER" ? "OFR" : "FND";
+  const name = type === "INTERNSHIP_COMPLETION" ? "internship" : type === "OFFER_LETTER" ? "offer-letter" : "credentials";
+  return new NextResponse("\ufeff" + bulkTemplateCsv(code, type), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="medskills-${intern ? "internship" : "credentials"}-bulk-template.csv"`,
+      "Content-Disposition": `attachment; filename="medskills-${name}-bulk-template.csv"`,
       "Cache-Control": "private, no-store",
     },
   });

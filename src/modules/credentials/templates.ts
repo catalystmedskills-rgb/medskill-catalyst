@@ -165,6 +165,21 @@ export async function previewTemplate(templateId: string, deps: CredentialDeps =
               totalHours: 480,
             }
           : undefined,
+      // Long sample values, Internship wording (the other offer type is checked at issue).
+      offer:
+        t.course.credential_type === "OFFER_LETTER"
+          ? {
+              offerType: "INTERNSHIP",
+              role: "Regulatory Affairs & Quality Intern",
+              institution: "Manipal College of Pharmaceutical Sciences, Manipal Academy of Higher Education",
+              startDate: new Date("2026-12-31T00:00:00Z"),
+              duration: "12 Weeks",
+              mode: "On-site",
+              modeInternship: "an on-site",
+              stipend: "INR 12,500 per month",
+              greetingName: "Aanya",
+            }
+          : undefined,
     },
     (p) => deps.storage.get(p),
   );

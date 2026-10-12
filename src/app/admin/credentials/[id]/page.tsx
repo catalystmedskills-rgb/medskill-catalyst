@@ -7,7 +7,15 @@ import { getCredentialDetail } from "@/src/modules/credentials/queries";
 import { derivePublicStatus } from "@/src/modules/credentials/status";
 import { verificationUrl } from "@/src/modules/credentials/config";
 import { formatLongDate, parseISODate, toISODate } from "@/src/modules/credentials/dates";
-import { CREDENTIAL_TYPE_DEFINITIONS, INTERNSHIP_MODE_LABELS, INTERNSHIP_MODES, storedInternshipDetailsSchema } from "@/src/modules/credentials/credential-types";
+import {
+  CREDENTIAL_TYPE_DEFINITIONS,
+  INTERNSHIP_MODE_LABELS,
+  INTERNSHIP_MODES,
+  OFFER_TYPE_LABELS,
+  OFFER_TYPES,
+  storedInternshipDetailsSchema,
+  storedOfferDetailsSchema,
+} from "@/src/modules/credentials/credential-types";
 import { reissueAction, resendAction, retryAction, revokeAction } from "../actions";
 import { Card, CredentialStatusBadge, dangerBtn, EVENT_LABEL, Flash, fmtDate, fmtDateTime, inputCls, primaryBtn, secondaryBtn } from "../_ui";
 
@@ -44,6 +52,8 @@ export default async function CredentialDetail({ params, searchParams }: { param
   const full = can(staff.role, Permission.AuditViewFull);
   const internshipParsed = c.credential_type === "INTERNSHIP_COMPLETION" ? storedInternshipDetailsSchema.safeParse(c.details) : null;
   const internship = internshipParsed?.success ? internshipParsed.data : null;
+  const offerParsed = c.credential_type === "OFFER_LETTER" ? storedOfferDetailsSchema.safeParse(c.details) : null;
+  const offer = offerParsed?.success ? offerParsed.data : null;
   const shared = isSharedIdentity(staff);
   const display = derivePublicStatus(c) ?? c.status;
   const url = verificationUrl(c.verification_token);
@@ -110,6 +120,18 @@ export default async function CredentialDetail({ params, searchParams }: { param
                 {(internship.mode || internship.location) && (
                   <Item label="Mode / location">{[internship.mode ? INTERNSHIP_MODE_LABELS[internship.mode] : null, internship.location].filter(Boolean).join(", ")}</Item>
                 )}
+              </>
+            ) : offer ? (
+              <>
+                <Item label="Offer type">{OFFER_TYPE_LABELS[offer.offerType]}</Item>
+                <Item label="Role">{offer.role}</Item>
+                {offer.institution && <Item label="Institution">{offer.institution}</Item>}
+                <Item label="Start date">{formatLongDate(parseISODate(offer.startDate)!)}</Item>
+                <Item label="Duration">{offer.duration.label}</Item>
+                <Item label="Mode">{INTERNSHIP_MODE_LABELS[offer.mode]}</Item>
+                {priv && <Item label="Stipend (letter only)">{offer.stipend?.label ?? "None"}</Item>}
+                <Item label="Greeting">Dear {offer.greetingName},</Item>
+                <Item label="Letter date">{fmtDate(c.completion_date)}</Item>
               </>
             ) : (
               <Item label="Completed">{fmtDate(c.completion_date)}</Item>
@@ -227,6 +249,69 @@ export default async function CredentialDetail({ params, searchParams }: { param
                         <input name="supervisor" defaultValue={internship.supervisor ?? ""} maxLength={120} className={inputCls} />
                       </label>
                     )}
+                  </>
+                ) : offer ? (
+                  <>
+                    <input type="hidden" name="credentialType" value="OFFER_LETTER" />
+                    <p className="text-xs text-muted">A revised offer: the new letter replaces this one, which shows as replaced.</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Offer type</span>
+                        <select name="offerType" defaultValue={offer.offerType} className={inputCls}>
+                          {OFFER_TYPES.map((t) => <option key={t} value={t}>{OFFER_TYPE_LABELS[t]}</option>)}
+                        </select>
+                      </label>
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Role</span>
+                        <input name="role" defaultValue={offer.role} required maxLength={80} className={inputCls} />
+                      </label>
+                    </div>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-semibold text-brand-navy">College / institution</span>
+                      <input name="institution" defaultValue={offer.institution ?? ""} maxLength={120} className={inputCls} />
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Start date</span>
+                        <input name="startDate" type="date" defaultValue={offer.startDate} required className={inputCls} />
+                      </label>
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Duration</span>
+                        <input name="durationCount" type="number" min={1} max={104} defaultValue={offer.duration.count} required className={inputCls} />
+                      </label>
+                      <label className="block space-y-1.5 text-sm">
+                        <span className="font-semibold text-brand-navy">Unit</span>
+                        <select name="durationUnit" defaultValue={offer.duration.unit} className={inputCls}>
+                          <option value="MONTHS">Months</option>
+                          <option value="WEEKS">Weeks</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-semibold text-brand-navy">Mode</span>
+                      <select name="mode" defaultValue={offer.mode} className={inputCls}>
+                        {INTERNSHIP_MODES.map((m) => <option key={m} value={m}>{INTERNSHIP_MODE_LABELS[m]}</option>)}
+                      </select>
+                    </label>
+                    {priv && (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="block space-y-1.5 text-sm">
+                          <span className="font-semibold text-brand-navy">Stipend (INR)</span>
+                          <input name="stipendRupees" type="number" min={1} step="0.01" defaultValue={offer.stipend ? offer.stipend.amountPaise / 100 : ""} className={inputCls} />
+                        </label>
+                        <label className="block space-y-1.5 text-sm">
+                          <span className="font-semibold text-brand-navy">Period</span>
+                          <select name="stipendPeriod" defaultValue={offer.stipend?.period ?? "PER_MONTH"} className={inputCls}>
+                            <option value="PER_MONTH">per month</option>
+                            <option value="TOTAL">total</option>
+                          </select>
+                        </label>
+                      </div>
+                    )}
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-semibold text-brand-navy">Name in the greeting</span>
+                      <input name="greetingName" defaultValue={offer.greetingName} maxLength={60} className={inputCls} />
+                    </label>
                   </>
                 ) : (
                   <label className="block space-y-1.5 text-sm">

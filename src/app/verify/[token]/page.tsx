@@ -34,6 +34,13 @@ const STATUS: Record<PublicCredential["status"], { label: string; tone: string; 
   },
 };
 
+/** Offer letters read as offers: "withdrawn", not "revoked"; "revised offer", not "credential". */
+const OFFER_STATUS: Partial<Record<PublicCredential["status"], { label: string; line: string }>> = {
+  VALID: { label: "Verified · Valid", line: `This offer letter was issued by ${ISSUER_NAME} and is valid.` },
+  REVOKED: { label: "Withdrawn", line: `This offer letter was issued by ${ISSUER_NAME} but the offer has been withdrawn.` },
+  SUPERSEDED: { label: "Replaced", line: `This offer letter has been replaced by a revised offer from ${ISSUER_NAME} and is no longer the current letter.` },
+};
+
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="grid gap-1 border-b border-brand-navy/5 py-3.5 last:border-0 sm:grid-cols-[180px_1fr] sm:gap-4">
@@ -64,7 +71,9 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
   const outcome = await verifyByToken(token, clientKey(await headers(), VERIFY_RATE_LIMIT_SURFACE));
   if (outcome.kind !== "found") return <NotFound busy={outcome.kind === "rate_limited"} />;
   const c = outcome.credential;
-  const s = STATUS[c.status];
+  const base = STATUS[c.status];
+  const o = c.offer ? OFFER_STATUS[c.status] : undefined;
+  const s = o ? { ...base, label: o.label, line: () => o.line } : base;
 
   return (
     <article className="space-y-6" aria-labelledby="credential-heading">
@@ -84,13 +93,19 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
         <h1 id="credential-heading" className="mt-3 font-display text-3xl font-semibold leading-tight tracking-tight text-brand-navy sm:text-4xl">
           {c.learnerName}
         </h1>
-        <p className="mt-2 text-lg text-ink">{c.internship ? c.internship.internshipTitle : c.programName}</p>
+        <p className="mt-2 text-lg text-ink">{c.offer ? c.offer.role : c.internship ? c.internship.internshipTitle : c.programName}</p>
 
         <dl className="mt-6">
           <Row label="Status" value={s.label} />
           <Row label="Credential type" value={c.credentialTypeLabel} />
-          <Row label="Certificate ID" value={c.certificateId} mono />
-          {c.internship ? (
+          <Row label={c.offer ? "Reference" : "Certificate ID"} value={c.certificateId} mono />
+          {c.offer ? (
+            <>
+              <Row label="Offer type" value={c.offer.offerType} />
+              <Row label="Role" value={c.offer.role} />
+              <Row label="Start date" value={formatLongDate(parseISODate(c.offer.startDate)!)} />
+            </>
+          ) : c.internship ? (
             <>
               <Row label="Internship name" value={c.internship.internshipTitle} />
               <Row label="Program" value={c.programName} />
@@ -113,7 +128,7 @@ export default async function CredentialPage({ params }: { params: Promise<{ tok
               href={`/verify/${outcome.token}/certificate`}
               className="inline-flex h-11 items-center rounded-pill bg-brand-blue px-6 text-sm font-semibold text-white shadow-msc-sm hover:bg-brand-navy"
             >
-              View certificate (PDF)
+              {c.offer ? "View offer letter (PDF)" : "View certificate (PDF)"}
             </a>
           </div>
         )}

@@ -26,9 +26,9 @@ import {
 } from "@/src/modules/credentials/templates";
 import { isValidProgramCode, normalizeCertificateId } from "@/src/modules/credentials/identifiers";
 import { formatLongDate, parseISODate } from "@/src/modules/credentials/dates";
-import { CREDENTIAL_TYPE_DEFINITIONS, credentialTypeSchema, INTERNSHIP_MODE_LABELS } from "@/src/modules/credentials/credential-types";
+import { CREDENTIAL_TYPE_DEFINITIONS, credentialTypeSchema, INTERNSHIP_MODE_LABELS, OFFER_TYPE_LABELS } from "@/src/modules/credentials/credential-types";
 import { missingRequiredFields, parseTemplateSpec } from "@/src/modules/credentials/template-config";
-import { readIssueForm } from "./issue/read-form";
+import { OFFER_FORM_FIELDS, readIssueForm } from "./issue/read-form";
 
 function safeMessage(err: unknown): string {
   if (err instanceof CredentialError || err instanceof AuthError) return err.message;
@@ -76,7 +76,7 @@ export async function planIssueAction(_prev: PlanState, formData: FormData): Pro
     if (plan.dedupe.existingCertificateId) {
       return {
         status: "error",
-        message: `Blocked: this learner already has an active credential ${plan.internship ? "for this internship (same title and dates)" : `for this program${plan.batch ? " and cohort" : " and completion date"}`} (${plan.dedupe.existingCertificateId}). To correct it, open that credential and use Reissue.`,
+        message: `Blocked: this learner already has an active credential ${plan.offer ? "for this offer (same offer type, role and start date)" : plan.internship ? "for this internship (same title and dates)" : `for this program${plan.batch ? " and cohort" : " and completion date"}`} (${plan.dedupe.existingCertificateId}). To correct it, open that credential and use Reissue.`,
         duplicate: { certificateId: plan.dedupe.existingCertificateId, credentialId: plan.dedupe.existingCredentialId },
       };
     }
@@ -100,7 +100,18 @@ export async function planIssueAction(_prev: PlanState, formData: FormData): Pro
               ["Supervisor", plan.internship.supervisor ? `${plan.internship.supervisor} (internal)` : "—"],
               ["Mode / location", [plan.internship.mode ? INTERNSHIP_MODE_LABELS[plan.internship.mode] : null, plan.internship.location].filter(Boolean).join(", ") || "—"],
             ] as [string, string][])
-          : null,
+          : plan.offer
+            ? ([
+                ["Offer type", OFFER_TYPE_LABELS[plan.offer.offerType]],
+                ["Role", plan.offer.role],
+                ["Institution", plan.offer.institution ?? "—"],
+                ["Start date", formatLongDate(parseISODate(plan.offer.startDate)!)],
+                ["Duration", plan.offer.duration.label],
+                ["Mode", INTERNSHIP_MODE_LABELS[plan.offer.mode]],
+                ["Stipend", plan.offer.stipend?.label ?? "None printed"],
+                ["Greeting", `Dear ${plan.offer.greetingName},`],
+              ] as [string, string][])
+            : null,
         issueDate: formatLongDate(plan.issueDate),
         expires: plan.expiresAt ? formatLongDate(plan.expiresAt) : "Never (lifetime credential)",
         template: `${plan.template.name} · v${plan.template.version}`,
@@ -193,6 +204,11 @@ export async function reissueAction(formData: FormData) {
                   .filter((k) => formData.has(k))
                   .map((k) => [k, String(formData.get(k) ?? "")]),
               )
+            : undefined,
+        // A revised offer: only the offer fields present on the form.
+        offer:
+          formData.get("credentialType") === "OFFER_LETTER"
+            ? Object.fromEntries(OFFER_FORM_FIELDS.filter((k) => formData.has(k)).map((k) => [k, String(formData.get(k) ?? "")]))
             : undefined,
         batchId: batchRaw === "__keep__" ? undefined : (batchRaw as string) || null,
         reason: String(formData.get("reason") ?? ""),

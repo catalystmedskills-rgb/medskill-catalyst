@@ -1,5 +1,12 @@
 import { ISSUER_NAME, verificationUrl } from "./config";
-import { CREDENTIAL_TYPE_DEFINITIONS, publicInternshipDetails, type CredentialType, type PublicInternshipDetails } from "./credential-types";
+import {
+  CREDENTIAL_TYPE_DEFINITIONS,
+  publicInternshipDetails,
+  publicOfferDetails,
+  type CredentialType,
+  type PublicInternshipDetails,
+  type PublicOfferDetails,
+} from "./credential-types";
 import { toISODate } from "./dates";
 import { derivePublicStatus, type PublicStatus, type StoredStatus } from "./status";
 
@@ -32,6 +39,8 @@ export type PublicCredential = {
    * never published.
    */
   internship: PublicInternshipDetails | null;
+  /** OFFER_LETTER only: offer type, role, start date. Stipend, institution, mode and terms are never published. */
+  offer: PublicOfferDetails | null;
 };
 
 export type PublicSource = {
@@ -85,6 +94,7 @@ export function toPublicCredential(src: PublicSource, now: Date = new Date()): P
     verificationUrl: verificationUrl(src.verification_token),
     certificateAvailable: status === "VALID" || status === "EXPIRED",
     internship: src.credential_type === "INTERNSHIP_COMPLETION" ? publicInternshipDetails(src.details) : null,
+    offer: src.credential_type === "OFFER_LETTER" ? publicOfferDetails(src.details) : null,
   };
 }
 
@@ -102,4 +112,5 @@ export const PUBLIC_FIELD_NAMES: ReadonlyArray<keyof PublicCredential> = [
   "verificationUrl",
   "certificateAvailable",
   "internship",
+  "offer",
 ];

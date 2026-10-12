@@ -6,11 +6,20 @@ import { CredentialError } from "./errors";
 import { indianDate, parseISODate, toISODate } from "./dates";
 import { dedupeKey } from "./dedupe";
 import { preflightCertificate } from "./render";
-import { defaultDeps, issueCredential, type CredentialDeps } from "./service";
+import { defaultDeps, issueCredential, offerRenderData, type CredentialDeps } from "./service";
 import { parseTemplateSpec } from "./template-config";
 import { generateCertificateId } from "./identifiers";
 import { verificationUrl } from "./config";
-import { buildInternshipDetails, internshipDedupeContext, type CredentialType, type InternshipDetails } from "./credential-types";
+import {
+  buildInternshipDetails,
+  buildOfferDetails,
+  internshipDedupeContext,
+  offerDedupeContext,
+  offerDetailsToInput,
+  type CredentialType,
+  type InternshipDetails,
+  type OfferDetails,
+} from "./credential-types";
 import { z } from "zod";
 
 /**
@@ -45,11 +54,51 @@ export const INTERNSHIP_BULK_COLUMNS = {
   ignored: ["issue_date", "expires_at", "completion_date", "duration"] as const,
 };
 
+/** OFFER_LETTER programs: the batch import columns (2026-10-12). */
+export const OFFER_BULK_COLUMNS = {
+  required: ["full_name", "email", "offer_type", "role", "start_date", "duration"] as const,
+  optional: ["institution", "mode", "stipend", "stipend_period", "greeting_name", "cohort", "external_learner_ref"] as const,
+  forbidden: BULK_COLUMNS.forbidden,
+  /** A letter is dated the day it is issued. */
+  ignored: ["issue_date", "expires_at", "completion_date"] as const,
+};
+
 export function bulkColumnsFor(type: CredentialType) {
-  return type === "INTERNSHIP_COMPLETION" ? INTERNSHIP_BULK_COLUMNS : BULK_COLUMNS;
+  return type === "INTERNSHIP_COMPLETION" ? INTERNSHIP_BULK_COLUMNS : type === "OFFER_LETTER" ? OFFER_BULK_COLUMNS : BULK_COLUMNS;
+}
+
+/** "Internship" / "Intern" → INTERNSHIP; "Campus Ambassador" / "Ambassador" / "CA" → CAMPUS_AMBASSADOR. */
+export function normalizeOfferType(v: string): "INTERNSHIP" | "CAMPUS_AMBASSADOR" | null {
+  const s = v.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (s === "internship" || s === "intern") return "INTERNSHIP";
+  if (s === "campusambassador" || s === "ambassador" || s === "ca") return "CAMPUS_AMBASSADOR";
+  return null;
+}
+
+/** "2 months", "8 weeks", "3 mo", "12wk" → count + unit. A bare number is refused, never guessed. */
+export function normalizeDuration(v: string): { count: number; unit: "WEEKS" | "MONTHS" } | null {
+  const m = /^(\d{1,3})\s*(weeks?|wks?|w|months?|mos?|m)$/i.exec(v.trim());
+  if (!m) return null;
+  return { count: Number(m[1]), unit: /^w/i.test(m[2]) ? "WEEKS" : "MONTHS" };
+}
+
+/** "per month" / "monthly" / "pm" → PER_MONTH; "total" / "one time" / "lump sum" → TOTAL. */
+export function normalizeStipendPeriod(v: string): "PER_MONTH" | "TOTAL" | null | "INVALID" {
+  const s = v.trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (!s) return null;
+  if (s === "permonth" || s === "monthly" || s === "pm" || s === "month") return "PER_MONTH";
+  if (s === "total" || s === "onetime" || s === "lumpsum") return "TOTAL";
+  return "INVALID";
 }
 
 export function bulkTemplateCsv(programCode = "FND", type: CredentialType = "COURSE_COMPLETION"): string {
+  if (type === "OFFER_LETTER") {
+    return [
+      "full_name,email,offer_type,role,institution,start_date,duration,mode,stipend,stipend_period,greeting_name",
+      `Sejal Sanjay Khapare,sejal@example.com,Internship,MedTech Sales Intern,"K.K. Wagh College of Pharmacy, Nashik",15/10/2026,2 months,Remote,,,`,
+      `Rohan Deshmukh,rohan@example.com,Campus Ambassador,Campus Ambassador,"Bharati Vidyapeeth College of Pharmacy, Pune",01/11/2026,6 months,Hybrid,2000,per month,`,
+    ].join("\r\n") + "\r\n";
+  }
   if (type === "INTERNSHIP_COMPLETION") {
     return [
       "full_name,email,internship_name,department,start_date,end_date,total_hours,supervisor,mode,location,cohort,external_learner_ref",
@@ -92,7 +141,6 @@ const HEADER_ALIASES: Record<string, string> = {
   internship_title: "internship_name",
   internship: "internship_name",
   title: "internship_name",
-  role: "internship_name",
   department: "department",
   specialization: "department",
   specialisation: "department",
@@ -112,6 +160,19 @@ const HEADER_ALIASES: Record<string, string> = {
   location: "location",
   city: "location",
   duration: "duration",
+  // Offer letter columns.
+  offer_type: "offer_type",
+  offer: "offer_type",
+  type: "offer_type",
+  position: "role",
+  role: "role",
+  institution: "institution",
+  college: "institution",
+  stipend: "stipend",
+  stipend_inr: "stipend",
+  stipend_period: "stipend_period",
+  greeting_name: "greeting_name",
+  greeting: "greeting_name",
 };
 
 /** "On-site", "onsite", "on site" → ON_SITE. Anything unrecognised is refused, never guessed. */
@@ -242,6 +303,8 @@ export function normalizeDate(v: Cell): string | null {
 const normText = (v: Cell) => (v instanceof Date ? "" : (v ?? "").normalize("NFC").replace(/\s+/g, " ").trim());
 
 export type RowInput = {
+  /** OFFER_LETTER rows: validated details for the preview. */
+  offer?: OfferDetails | null;
   fullName: string;
   email: string;
   /** Course completions; for internships this is the end date. */
@@ -274,7 +337,11 @@ export async function createBulkJob(
   }
 
   const sheet = await parseUpload(opts.bytes);
-  const headers = sheet.headers.map((h) => HEADER_ALIASES[normHeader(h)] ?? normHeader(h));
+  let headers = sheet.headers.map((h) => HEADER_ALIASES[normHeader(h)] ?? normHeader(h));
+  // "role" names the offered role; in an internship file without internship_name it is the internship name.
+  if (course.credential_type === "INTERNSHIP_COMPLETION" && !headers.includes("internship_name")) {
+    headers = headers.map((h) => (h === "role" ? "internship_name" : h));
+  }
   const forbidden = headers.filter((h) => (columns.forbidden as readonly string[]).includes(h));
   if (forbidden.length) {
     throw new CredentialError(`Remove the ${forbidden.join(", ")} column: certificate IDs and tokens are generated by the system.`, "VALIDATION");
@@ -327,7 +394,48 @@ export async function createBulkJob(
         }
       }
     }
-    const completionDate = credentialType === "INTERNSHIP_COMPLETION" ? (internship?.endDate ?? null) : normalizeDate(get("completion_date"));
+    // Offer rows: the registry validates; the letter is dated the day it is issued.
+    let offer: OfferDetails | null = null;
+    if (credentialType === "OFFER_LETTER") {
+      const offerType = normalizeOfferType(normText(get("offer_type")));
+      const start = normalizeDate(get("start_date"));
+      const duration = normalizeDuration(normText(get("duration")));
+      const mode = normalizeMode(normText(get("mode")) || "Remote");
+      const period = normalizeStipendPeriod(normText(get("stipend_period")));
+      if (!offerType) messages.push({ level: "error", text: "Offer type must be Internship or Campus Ambassador." });
+      if (!start) messages.push({ level: "error", text: "Start date must be YYYY-MM-DD or DD/MM/YYYY." });
+      if (!duration) messages.push({ level: "error", text: "Duration must look like \"2 months\" or \"8 weeks\"." });
+      if (mode === "INVALID" || mode === null) messages.push({ level: "error", text: "Mode must be Remote, On-site or Hybrid." });
+      if (period === "INVALID") messages.push({ level: "error", text: "Stipend period must be \"per month\" or \"total\"." });
+      if (offerType && start && duration && mode && mode !== "INVALID" && period !== "INVALID") {
+        try {
+          offer = buildOfferDetails(
+            {
+              offerType,
+              role: normText(get("role")),
+              institution: normText(get("institution")),
+              startDate: start,
+              durationCount: duration.count,
+              durationUnit: duration.unit,
+              mode,
+              stipendRupees: normText(get("stipend")),
+              stipendPeriod: period,
+              greetingName: normText(get("greeting_name")),
+            },
+            fullName,
+          );
+        } catch (e) {
+          if (!(e instanceof z.ZodError)) throw e;
+          for (const issue of e.issues) messages.push({ level: "error", text: issue.message });
+        }
+      }
+    }
+    const completionDate =
+      credentialType === "INTERNSHIP_COMPLETION"
+        ? (internship?.endDate ?? null)
+        : credentialType === "OFFER_LETTER"
+          ? toISODate(today)
+          : normalizeDate(get("completion_date"));
     const programCode = normText(get("program_code")).toUpperCase();
     const cohortName = normText(get("cohort")) || null;
     const externalRef = normText(get("external_learner_ref")).slice(0, 120) || null;
@@ -335,7 +443,9 @@ export async function createBulkJob(
     if (fullName.length < 2) messages.push({ level: "error", text: "Full name is missing." });
     if (fullName.length > 120) messages.push({ level: "error", text: "Full name is longer than 120 characters." });
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) messages.push({ level: "error", text: "Email is missing or invalid." });
-    if (credentialType === "INTERNSHIP_COMPLETION") {
+    if (credentialType === "OFFER_LETTER") {
+      // Dated today; the start date may be in the future.
+    } else if (credentialType === "INTERNSHIP_COMPLETION") {
       if (completionDate && parseISODate(completionDate)!.getTime() > today.getTime()) messages.push({ level: "error", text: "The internship end date is in the future." });
     } else if (!completionDate) messages.push({ level: "error", text: "Completion date must be YYYY-MM-DD or DD/MM/YYYY." });
     else if (parseISODate(completionDate)!.getTime() > today.getTime()) messages.push({ level: "error", text: "Completion date is in the future." });
@@ -351,7 +461,7 @@ export async function createBulkJob(
       messages.push({ level: "warning", text: `Column(s) ${ignored.join(", ")} are ignored; ${credentialType === "INTERNSHIP_COMPLETION" ? "duration and completion come from the start and end dates, and issue/expiry dates are set by the system" : "issue and expiry dates are set by the system"}.` });
     }
 
-    const typeContext = internship ? internshipDedupeContext(internship) : null;
+    const typeContext = internship ? internshipDedupeContext(internship) : offer ? offerDedupeContext(offer) : null;
     const fileKey = `${email}|${typeContext ?? batchId ?? `date:${completionDate}`}`;
     if (email && seen.has(fileKey)) messages.push({ level: "error", text: `Duplicate of row ${seen.get(fileKey)} in this file.` });
     else if (email) seen.set(fileKey, rowNumber);
@@ -386,6 +496,7 @@ export async function createBulkJob(
                 totalHours: internship.totalHours,
               }
             : undefined,
+          offer: offerRenderData(offer),
         },
         (p) => deps.storage.get(p),
       );
@@ -395,7 +506,7 @@ export async function createBulkJob(
     const validation = messages.some((m) => m.level === "error") ? "ERROR" : messages.some((m) => m.level === "warning") ? "WARNING" : "VALID";
     rows.push({
       row_number: rowNumber,
-      input: { fullName, email, completionDate: completionDate ?? "", batchId, cohortName, externalRef, internship },
+      input: { fullName, email, completionDate: completionDate ?? "", batchId, cohortName, externalRef, internship, offer },
       validation,
       messages,
     });
@@ -517,7 +628,9 @@ export async function processBulkChunk(jobId: string, actor: StaffUser, deps: Cr
                 void _computed;
                 return { credentialType: "INTERNSHIP_COMPLETION" as const, internship: details };
               })()
-            : { completionDate: input.completionDate }),
+            : input.offer
+              ? { credentialType: "OFFER_LETTER" as const, offer: offerDetailsToInput(input.offer) }
+              : { completionDate: input.completionDate }),
           templateId: job.template_id,
           sendEmail: job.send_email,
           idempotencyKey: `bulk:${jobId}:${row.row_number}`,
@@ -573,11 +686,13 @@ export async function bulkResultsCsv(jobId: string, includePrivate: boolean, dep
   });
   const job = await deps.db.credentialBulkJob.findUniqueOrThrow({ where: { id: jobId }, select: { credential_type: true } });
   const intern = job.credential_type === "INTERNSHIP_COMPLETION";
+  const offerJob = job.credential_type === "OFFER_LETTER";
   const header = [
     "row",
     "full_name",
     ...(includePrivate ? ["email"] : []),
     ...(intern ? ["internship_name", "start_date", "end_date", "duration"] : []),
+    ...(offerJob ? ["offer_type", "role", "start_date"] : []),
     "outcome",
     "certificate_id",
     "verification_url",
@@ -594,6 +709,7 @@ export async function bulkResultsCsv(jobId: string, includePrivate: boolean, dep
         csvCell(input.fullName),
         ...(includePrivate ? [csvCell(input.email)] : []),
         ...(intern ? [csvCell(i?.internshipTitle), csvCell(i?.startDate), csvCell(i?.endDate), csvCell(i?.duration.label)] : []),
+        ...(offerJob ? [csvCell(input.offer?.offerType), csvCell(input.offer?.role), csvCell(input.offer?.startDate)] : []),
         r.outcome,
         csvCell(r.credential?.status === "VALID" ? r.credential.certificate_id : ""),
         csvCell(r.credential?.status === "VALID" ? verificationUrl(r.credential.verification_token) : ""),

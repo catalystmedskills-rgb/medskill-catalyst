@@ -31,7 +31,7 @@ export default async function CredentialListPage({ searchParams }: { searchParam
     <div className="space-y-5">
       <PageHeader title="Credentials" subtitle={`${total.toLocaleString("en-IN")} matching`} />
       <form method="GET" className="grid gap-2 rounded-msc-lg bg-surface p-4 shadow-msc-sm sm:grid-cols-2 lg:grid-cols-[2fr_1.1fr_1.2fr_1fr_1fr_1fr_1fr_auto]">
-        <input type="search" name="q" defaultValue={f.q ?? ""} aria-label="Search" placeholder={includePrivate ? "Certificate ID, name, email or internship name" : "Certificate ID, name or internship name"} className={inputCls} />
+        <input type="search" name="q" defaultValue={f.q ?? ""} aria-label="Search" placeholder={includePrivate ? "ID, name, email, internship or role" : "ID, name, internship or role"} className={inputCls} />
         <select name="type" defaultValue={"type" in f ? (f.type ?? "") : ""} aria-label="Credential type" className={inputCls}>
           <option value="">All types</option>
           {CREDENTIAL_TYPES.map((t) => <option key={t} value={t}>{CREDENTIAL_TYPE_DEFINITIONS[t].label}</option>)}
@@ -77,8 +77,8 @@ export default async function CredentialListPage({ searchParams }: { searchParam
                 <td className="px-4 py-3"><span className="font-medium text-brand-navy">{r.learnerName}</span>{r.email && <span className="block text-xs text-muted">{r.email}</span>}</td>
                 <td className="px-4 py-3">
                   <span className="block text-xs font-semibold uppercase tracking-wide text-brand-blue">{CREDENTIAL_TYPE_DEFINITIONS[r.credentialType].label}</span>
-                  {r.internshipTitle ? <span className="block">{r.internshipTitle}</span> : null}
-                  <span className={r.internshipTitle ? "block text-xs text-muted" : ""}>{r.programName}</span>
+                  {r.subtitle ? <span className="block">{r.subtitle}</span> : null}
+                  <span className={r.subtitle ? "block text-xs text-muted" : ""}>{r.programName}</span>
                   {r.cohort && <span className="block text-xs text-muted">{r.cohort}</span>}
                 </td>
                 <td className="px-4 py-3">{fmtDate(r.completionDate)}</td>

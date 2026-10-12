@@ -46,6 +46,27 @@ Evidence: **T** `tests/unit/credential-types.test.ts`, `tests/integration/intern
 | CT-14 | Registry, verification, admin search, audit and analytics include internships; search filters by type | P0 | PASS | Type filter + internship-title search (B: 2 of 6 local credentials); `credential_type` in issue/reissue/bulk audit metadata; dashboard "By credential type" |
 | CT-15 | Don't block on internship artwork; integrate the final design when supplied | P0 | PASS | Watermarked dev internship template works end to end; final artwork = new template version upload |
 
+## Addendum (2026-10-12): offer letters
+
+Owner requirement: issue offer letters to incoming interns and campus ambassadors on the same
+platform. Decisions and plan: `OFFER_LETTER_PLAN.md`. Evidence: **T** `tests/unit/offer-letters.test.ts`,
+`tests/integration/offer-letters.test.ts`; **DB** migration `20261012120000_offer_letters`;
+**B** local browser check 12 Oct 2026 (issue a Campus Ambassador letter → review → issue →
+public page and API leak check → PDF → QR decodes to the letter's page).
+
+| # | Requirement | Status | Evidence |
+|---|---|---|---|
+| OL-01 | Offer letter is a credential type; one program (OFR), offer type and role per letter | PASS | Registry + enum; T |
+| OL-02 | Letter matches the owner's sample; wording per offer type, versioned in the template | PASS (Internship) / **owner approval** (Campus Ambassador wording) | Specimens; T renders both types and longest values |
+| OL-03 | Recipient, institution, role, start date, duration, mode, optional stipend (paise, INR), greeting (first name, honorifics skipped) | PASS | T |
+| OL-04 | Letter dated on issue; start date may be in the future | PASS | T |
+| OL-05 | Public verification minimal: name, type, offer type, role, start date, issue date, status ("Withdrawn" when revoked) | PASS | T + B: no stipend, institution, mode, duration, greeting or email on page or API |
+| OL-06 | Withdraw (revoke) and revise (reissue, carrying unchanged fields) | PASS | T |
+| OL-07 | Duplicate rule: recipient + offer type + role + start date | PASS | T (single and bulk) |
+| OL-08 | Bulk import with spreadsheet wording ("2 months", "CA", "monthly"); bad rows reported | PASS | T |
+| OL-09 | Email: offer wording, role and start date only (no stipend) | PASS | T |
+| OL-10 | Signature: Gagan Victor's authorized signature as Founder; stored privately | PASS in app | Private bucket; same git exposure as before (see Known issues) |
+
 ## Functional requirements
 
 FR-01 through FR-16: **PASS**, except FR-01, which is PASS in code and awaits your approval

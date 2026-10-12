@@ -4,8 +4,8 @@ import QRCode from "qrcode";
 import { createHash } from "node:crypto";
 import { formatLongDate } from "./dates";
 import { ISSUER_NAME } from "./config";
-import { fitText } from "./text-fit";
-import type { FieldKey, FontRef, TemplateSpec, TextBox } from "./template-config";
+import { fitRuns, fitText, parseRuns, stripMarkers, trackedWidth, type Run } from "./text-fit";
+import type { FieldKey, FontRef, OfferCopy, TemplateSpec, TextBox } from "./template-config";
 
 export type CertificateData = {
   learnerName: string;
@@ -24,6 +24,20 @@ export type CertificateData = {
     /** Computed from the dates (credential-types.ts), never typed. */
     duration: string;
     totalHours: number | null;
+  };
+  /** Present for OFFER_LETTER credentials only. Printable labels, resolved by the registry. */
+  offer?: {
+    offerType: string;
+    role: string;
+    institution: string | null;
+    startDate: Date;
+    duration: string;
+    /** "Remote" */
+    mode: string;
+    /** "a virtual" / "an on-site" / "a hybrid", for "…offer you a virtual internship…" */
+    modeInternship: string;
+    stipend: string | null;
+    greetingName: string;
   };
 };
 
@@ -45,8 +59,59 @@ function hexColor(h: string) {
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
-function fieldValue(key: FieldKey, d: CertificateData): string | null {
+function dmy(d: Date) {
+  return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+}
+
+/** Fill the template's wording; values are stripped of ** so typed text can't change formatting. */
+function fillCopy(template: string, o: NonNullable<CertificateData["offer"]>) {
+  const values: Record<string, string> = {
+    firstName: stripMarkers(o.greetingName),
+    role: stripMarkers(o.role),
+    institution: stripMarkers(o.institution ?? ""),
+    atInstitution: o.institution ? ` at ${stripMarkers(o.institution)}` : "",
+    modeInternship: o.modeInternship,
+  };
+  return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in values ? values[k] : m));
+}
+
+function fieldValue(key: FieldKey, d: CertificateData, box: TextBox, copy: Record<string, OfferCopy> | undefined): string | null {
+  const date = (x: Date) => (box.dateStyle === "dmy" ? dmy(x) : formatLongDate(x));
+  const o = d.offer;
+  const c = o ? copy?.[o.offerType] : undefined;
   switch (key) {
+    case "offer_eyebrow":
+      return c && o ? fillCopy(c.eyebrow, o) : null;
+    case "offer_salutation":
+      return o ? `Dear ${stripMarkers(o.greetingName)},` : null;
+    case "offer_opening":
+      return c && o ? fillCopy(c.opening, o) : null;
+    case "offer_body":
+      return c && o ? fillCopy(c.body, o) : null;
+    case "offer_expect_1":
+      return c && o ? fillCopy(c.expect1, o) : null;
+    case "offer_expect_2":
+      return c && o ? fillCopy(c.expect2, o) : null;
+    case "offer_expect_3":
+      return c && o ? fillCopy(c.expect3, o) : null;
+    case "offer_closing":
+      return c && o ? fillCopy(c.closing, o) : null;
+    case "offer_signoff":
+      return c && o ? fillCopy(c.signoff, o) : null;
+    case "recipient_institution":
+      return o?.institution ?? null;
+    case "offer_role":
+      return o?.role ?? null;
+    case "offer_duration":
+      return o?.duration ?? null;
+    case "offer_mode":
+      return o?.mode ?? null;
+    case "offer_start_date":
+      return o ? date(o.startDate) : null;
+    case "offer_stipend_label":
+      return o?.stipend ? "Stipend" : null;
+    case "offer_stipend":
+      return o?.stipend ?? null;
     case "learner_name":
       return d.learnerName;
     case "program_name":
@@ -54,7 +119,7 @@ function fieldValue(key: FieldKey, d: CertificateData): string | null {
     case "completion_date":
       return formatLongDate(d.completionDate);
     case "issue_date":
-      return formatLongDate(d.issueDate);
+      return date(d.issueDate);
     case "expiry_date":
       return d.expiresOn ? formatLongDate(d.expiresOn) : null;
     case "certificate_id":
@@ -100,7 +165,7 @@ class FontCache {
   }
 }
 
-type Layout = { lines: string[]; size: number; font: PDFFont; box: TextBox };
+type Layout = { lines: string[]; size: number; font: PDFFont; box: TextBox; runs?: Run[][]; bold?: PDFFont; prefixFont?: PDFFont };
 
 /** Lay out one text box; returns issues instead of throwing so preflight can report all of them. */
 async function layout(fonts: FontCache, box: TextBox, text: string, field: FieldKey | "template"): Promise<Layout | PreflightIssue> {
@@ -117,6 +182,24 @@ async function layout(fonts: FontCache, box: TextBox, text: string, field: Field
   } catch {
     return { field: field as FieldKey, message: "contains characters the template font cannot print" };
   }
+  if (box.boldFont || box.tracking > 0 || box.valign === "top" || box.prefixFont || box.prefixColor) {
+    const bold = box.boldFont ? await fonts.get(box.boldFont) : font;
+    const prefixFont = box.prefixFont ? await fonts.get(box.prefixFont) : font;
+    if (box.boldFont) {
+      const boldSet = new Set(bold.getCharacterSet());
+      if ([...full].some((character) => !/[\s*]/.test(character) && !boldSet.has(character.codePointAt(0)!))) {
+        return { field, message: "contains characters the template font cannot print" };
+      }
+    }
+    // A styled prefix becomes its own runs; otherwise it is part of the text, as before.
+    const styled = Boolean(box.prefixFont || box.prefixColor);
+    const runs = styled
+      ? [...parseRuns(box.prefix).map((r) => ({ ...r, bold: false, prefix: true })), ...parseRuns(text)]
+      : parseRuns(full);
+    const fit = fitRuns(runs, font, bold, box, prefixFont);
+    if (!fit.ok) return { field: field as FieldKey, message: `text is too long for the template (${fit.reason})` };
+    return { lines: fit.lines.map((l) => l.map((r) => r.text).join(" ")), runs: fit.lines, size: fit.size, font, bold, prefixFont, box };
+  }
   const fit = fitText(full, font, box);
   if (!fit.ok) return { field: field as FieldKey, message: `text is too long for the certificate (${fit.reason})` };
   return { lines: fit.lines, size: fit.size, font, box };
@@ -126,8 +209,34 @@ function drawLayout(page: PDFPage, l: Layout) {
   const { box } = l;
   const lineGap = l.size * box.lineHeight;
   const blockHeight = l.size + (l.lines.length - 1) * lineGap;
-  // Vertically centre the block in its box; baseline of first line.
-  let baseline = box.y + (box.height + blockHeight) / 2 - l.size * 0.8;
+  // Paragraphs start at the top of their box; labels are centred. Baseline of first line.
+  let baseline = box.valign === "top" ? box.y + box.height - l.size * 0.8 : box.y + (box.height + blockHeight) / 2 - l.size * 0.8;
+  if (l.runs) {
+    const color = hexColor(box.color);
+    const space = l.font.widthOfTextAtSize(" ", l.size) + box.tracking * l.size;
+    for (const line of l.runs) {
+      const fontOf = (r: Run) => (r.prefix ? l.prefixFont ?? l.font : r.bold ? l.bold! : l.font);
+      const width = line.reduce((a, r, i) => a + (i && !r.glue ? space : 0) + trackedWidth(fontOf(r), r.text, l.size, box.tracking), 0);
+      let x = box.align === "center" ? box.x + (box.width - width) / 2 : box.align === "right" ? box.x + box.width - width : box.x;
+      line.forEach((r, i) => {
+        if (i && !r.glue) x += space;
+        const font = fontOf(r);
+        const runColor = r.prefix && box.prefixColor ? hexColor(box.prefixColor) : color;
+        if (box.tracking > 0) {
+          for (const ch of r.text) {
+            page.drawText(ch, { x, y: baseline, size: l.size, font, color: runColor });
+            x += font.widthOfTextAtSize(ch, l.size) + box.tracking * l.size;
+          }
+          x -= box.tracking * l.size;
+        } else {
+          page.drawText(r.text, { x, y: baseline, size: l.size, font, color: runColor });
+          x += font.widthOfTextAtSize(r.text, l.size);
+        }
+      });
+      baseline -= lineGap;
+    }
+    return;
+  }
   for (const line of l.lines) {
     const w = l.font.widthOfTextAtSize(line, l.size);
     const x = box.align === "center" ? box.x + (box.width - w) / 2 : box.align === "right" ? box.x + box.width - w : box.x;
@@ -216,6 +325,22 @@ const FIELD_ORDER: FieldKey[] = [
   "internship_period",
   "duration",
   "total_hours",
+  "offer_eyebrow",
+  "offer_salutation",
+  "offer_opening",
+  "offer_body",
+  "offer_expect_1",
+  "offer_expect_2",
+  "offer_expect_3",
+  "offer_closing",
+  "offer_signoff",
+  "recipient_institution",
+  "offer_role",
+  "offer_duration",
+  "offer_mode",
+  "offer_start_date",
+  "offer_stipend_label",
+  "offer_stipend",
 ];
 
 async function build(spec: TemplateSpec, data: CertificateData, loader: AssetLoader, draw: boolean) {
@@ -229,7 +354,7 @@ async function build(spec: TemplateSpec, data: CertificateData, loader: AssetLoa
   for (const key of FIELD_ORDER) {
     const box = spec.fieldConfig.fields[key];
     if (!box) continue;
-    const value = fieldValue(key, data);
+    const value = fieldValue(key, data, box, spec.fieldConfig.copy);
     if (value === null) continue;
     const l = await layout(fonts, box, value, key);
     if ("message" in l) issues.push(l);

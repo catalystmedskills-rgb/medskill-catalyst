@@ -3,7 +3,15 @@
 import { startTransition, useActionState, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { issueAction, planIssueAction, type PlanState } from "../actions";
-import { CREDENTIAL_TYPE_DEFINITIONS, CREDENTIAL_TYPES, INTERNSHIP_MODE_LABELS, INTERNSHIP_MODES, type CredentialType } from "@/src/modules/credentials/credential-types";
+import {
+  CREDENTIAL_TYPE_DEFINITIONS,
+  CREDENTIAL_TYPES,
+  INTERNSHIP_MODE_LABELS,
+  INTERNSHIP_MODES,
+  OFFER_TYPE_LABELS,
+  OFFER_TYPES,
+  type CredentialType,
+} from "@/src/modules/credentials/credential-types";
 import { calendarDuration } from "@/src/modules/credentials/duration";
 import { parseISODate } from "@/src/modules/credentials/dates";
 
@@ -82,6 +90,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
                   <input
                     type="radio"
                     name="credentialType"
+                    aria-label={CREDENTIAL_TYPE_DEFINITIONS[t].label}
                     value={t}
                     checked={type === t}
                     disabled={!available}
@@ -102,11 +111,11 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
-            <label htmlFor="fullName" className="text-sm font-semibold text-brand-navy">Learner full name, as it should appear on the certificate</label>
+            <label htmlFor="fullName" className="text-sm font-semibold text-brand-navy">{type === "OFFER_LETTER" ? "Recipient full name, as it should appear on the letter" : "Learner full name, as it should appear on the certificate"}</label>
             <input id="fullName" name="fullName" required maxLength={120} autoComplete="off" className={input} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <label htmlFor="email" className="text-sm font-semibold text-brand-navy">Learner email</label>
+            <label htmlFor="email" className="text-sm font-semibold text-brand-navy">{type === "OFFER_LETTER" ? "Recipient email" : "Learner email"}</label>
             <input id="email" name="email" type="email" required maxLength={254} autoComplete="off" className={input} />
           </div>
           <div className="space-y-1.5">
@@ -135,6 +144,70 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
               <label htmlFor="completionDate" className="text-sm font-semibold text-brand-navy">Completion date</label>
               <input id="completionDate" name="completionDate" type="date" required max={today} className={input} />
             </div>
+          ) : type === "OFFER_LETTER" ? (
+            <>
+              <div className="space-y-1.5">
+                <label htmlFor="offerType" className="text-sm font-semibold text-brand-navy">Offer type</label>
+                <select id="offerType" name="offerType" required defaultValue="" className={input}>
+                  <option value="" disabled>Choose</option>
+                  {OFFER_TYPES.map((t) => (
+                    <option key={t} value={t}>{OFFER_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted">Picks the letter&apos;s wording.</p>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="role" className="text-sm font-semibold text-brand-navy">Role</label>
+                <input id="role" name="role" required minLength={2} maxLength={80} autoComplete="off" placeholder="e.g. MedTech Sales Intern" className={input} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label htmlFor="institution" className="text-sm font-semibold text-brand-navy">
+                  College / institution <span className="font-normal text-muted">(optional)</span>
+                </label>
+                <input id="institution" name="institution" maxLength={120} autoComplete="off" placeholder="e.g. K.K. Wagh College of Pharmacy, Nashik" className={input} />
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="offerStartDate" className="text-sm font-semibold text-brand-navy">Start date</label>
+                <input id="offerStartDate" name="startDate" type="date" required className={input} />
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-sm font-semibold text-brand-navy">Duration</span>
+                <div className="flex gap-2">
+                  <input aria-label="Duration" name="durationCount" type="number" required min={1} max={104} step={1} defaultValue={2} className={input} />
+                  <select aria-label="Duration unit" name="durationUnit" defaultValue="MONTHS" className={input}>
+                    <option value="MONTHS">Months</option>
+                    <option value="WEEKS">Weeks</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label htmlFor="offerMode" className="text-sm font-semibold text-brand-navy">Mode</label>
+                <select id="offerMode" name="mode" required defaultValue="REMOTE" className={input}>
+                  {INTERNSHIP_MODES.map((m) => (
+                    <option key={m} value={m}>{INTERNSHIP_MODE_LABELS[m]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-sm font-semibold text-brand-navy">
+                  Stipend <span className="font-normal text-muted">(optional, INR)</span>
+                </span>
+                <div className="flex gap-2">
+                  <input aria-label="Stipend amount in rupees" name="stipendRupees" type="number" min={1} step="0.01" inputMode="decimal" className={input} />
+                  <select aria-label="Stipend period" name="stipendPeriod" defaultValue="PER_MONTH" className={input}>
+                    <option value="PER_MONTH">per month</option>
+                    <option value="TOTAL">total</option>
+                  </select>
+                </div>
+                <p className="text-xs text-muted">Printed on the letter only, never on the public page.</p>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <label htmlFor="greetingName" className="text-sm font-semibold text-brand-navy">
+                  Name in the greeting <span className="font-normal text-muted">(optional)</span>
+                </label>
+                <input id="greetingName" name="greetingName" maxLength={60} autoComplete="off" placeholder="Defaults to the first name: Dear Sejal," className={input} />
+              </div>
+            </>
           ) : (
             <>
               <div className="space-y-1.5 sm:col-span-2">
@@ -199,7 +272,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
           )}
           <label className="flex items-center gap-2 self-end pb-2 text-sm text-ink">
             <input type="checkbox" name="sendEmail" className="h-4 w-4 accent-brand-blue" />
-            Email the learner after issuing
+            {type === "OFFER_LETTER" ? "Email the recipient after issuing" : "Email the learner after issuing"}
           </label>
         </div>
         {/* Review runs as a transition, not a form action: React resets a form
@@ -245,7 +318,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-blue">Review</p>
             <dl className="mt-3 space-y-2 text-sm">
               {[
-                ["Name on certificate", state.summary.learnerName],
+                [type === "OFFER_LETTER" ? "Name on letter" : "Name on certificate", state.summary.learnerName],
                 ["Email", state.summary.email],
                 ["Type", state.summary.credentialType],
                 ["Program", state.summary.program],
@@ -254,7 +327,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
                 ["Issue date", state.summary.issueDate],
                 ["Expires", state.summary.expires],
                 ["Template", state.summary.template],
-                ["Email learner", state.summary.sendEmail ? "Yes" : "No"],
+                [type === "OFFER_LETTER" ? "Email recipient" : "Email learner", state.summary.sendEmail ? "Yes" : "No"],
               ].map(([k, v]) => (
                 <div key={k} className="grid grid-cols-[120px_1fr] gap-2">
                   <dt className="text-muted">{k}</dt>
@@ -277,7 +350,7 @@ export function IssueForm({ programs, today }: { programs: Program[]; today: str
               formTarget="_blank"
               className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-pill border border-brand-navy/15 bg-surface text-sm font-semibold text-brand-navy hover:border-brand-blue hover:text-brand-blue"
             >
-              Preview certificate (PDF)
+              {type === "OFFER_LETTER" ? "Preview letter (PDF)" : "Preview certificate (PDF)"}
             </button>
             <SubmitButton
               formAction={issueAction}

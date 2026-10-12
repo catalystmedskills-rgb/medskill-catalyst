@@ -52,6 +52,16 @@ including live certificates, becomes `COURSE_COMPLETION`; nothing is rewritten.
 Rollback: redeploy the previous release. The added columns are ignored by old code; the
 replaced guard only adds checks. Do not drop the columns.
 
+### Offer letters (2026-10-12) [GATE]
+
+`prisma/migrations/20261012120000_offer_letters/migration.sql` adds one enum value
+(`OFFER_LETTER`); additive and safe to re-run. **Apply it before deploying the release**
+(deploying first breaks reads of the new type; see 2026-10-04). Then: create the program
+(`scripts/create-offer-letter-program.ts`, code OFR), upload the template as a draft
+(`scripts/upload-offer-letter-template.ts`), owner approves the preview and the Campus
+Ambassador wording, then `--activate`. Smoke test: issue one letter to the owner, check
+email/PDF/QR/public page, withdraw it.
+
 ## Before the first real credential
 
 1. **Program codes:** Admin → Credentials → Programs. Set codes for the real programs.

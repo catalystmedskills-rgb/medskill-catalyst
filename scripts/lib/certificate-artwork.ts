@@ -40,10 +40,15 @@ export async function loadFonts() {
   };
 }
 
-export async function drawArtwork(variant: ArtworkVariant): Promise<Uint8Array> {
+/** The MedSkills Catalyst seal/logo PNG bundled with the approved certificate design. */
+export async function loadLogo(): Promise<Uint8Array> {
   const html = await readFile(path.join(root, "public/certificate/foundation.html"), "utf8");
   const manifest = JSON.parse(html.match(/<script type="__bundler\/manifest">\s*([\s\S]*?)<\/script>/)![1]);
-  const logoBytes = Buffer.from(manifest["f16ac5c5-9b30-4ff4-8620-052e2d6b3365"].data, "base64");
+  return Buffer.from(manifest["f16ac5c5-9b30-4ff4-8620-052e2d6b3365"].data, "base64");
+}
+
+export async function drawArtwork(variant: ArtworkVariant): Promise<Uint8Array> {
+  const logoBytes = await loadLogo();
   const fonts = await loadFonts();
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);

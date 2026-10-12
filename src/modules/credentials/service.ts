@@ -21,6 +21,12 @@ import {
   credentialTypeSchema,
   internshipDedupeContext,
   storedInternshipDetailsSchema,
+  buildOfferDetails,
+  INTERNSHIP_MODE_LABELS,
+  offerDedupeContext,
+  offerDetailsToInput,
+  storedOfferDetailsSchema,
+  type OfferDetails,
   type CredentialType,
   type InternshipDetails,
 } from "./credential-types";
@@ -81,6 +87,8 @@ export const issueInputSchema = z.object({
   credentialType: credentialTypeSchema.optional(),
   /** INTERNSHIP_COMPLETION details, validated by the type registry in planIssue. */
   internship: z.unknown().optional(),
+  /** OFFER_LETTER details, validated by the type registry in planIssue. */
+  offer: z.unknown().optional(),
   templateId: z.string().uuid().optional(),
   sendEmail: z.boolean().default(true),
   /** Client-generated per form submission / bulk row. Retries reuse it. */
@@ -98,8 +106,9 @@ export type IssuePlan = {
   expiresAt: Date | null;
   credentialType: CredentialType;
   /** Snapshot stored in credentials.details: {} for course completions. */
-  details: InternshipDetails | Record<string, never>;
+  details: InternshipDetails | OfferDetails | Record<string, never>;
   internship: InternshipDetails | null;
+  offer: OfferDetails | null;
   /** The type's duplicate identity (internships: title + dates), else null. */
   typeContext: string | null;
   dedupe: { key: string | null; existingCertificateId: string | null; existingCredentialId: string | null };
@@ -165,13 +174,49 @@ function parseInternship(raw: unknown): InternshipDetails {
   }
 }
 
+function parseOffer(raw: unknown, fullName: string): OfferDetails {
+  if (!raw || typeof raw !== "object") throw new CredentialError("Enter the offer details.", "VALIDATION");
+  try {
+    return buildOfferDetails(raw as Parameters<typeof buildOfferDetails>[0], fullName);
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      throw new CredentialError(e.issues.map((i) => i.message).join("; "), "VALIDATION", { fields: e.issues.map((i) => i.path.join(".")) });
+    }
+    throw e;
+  }
+}
+
+function storedOffer(c: Pick<Credential, "credential_type" | "details">): OfferDetails | null {
+  if (c.credential_type !== "OFFER_LETTER") return null;
+  return storedOfferDetailsSchema.parse(c.details);
+}
+
+const MODE_INTERNSHIP: Record<string, string> = { REMOTE: "a virtual", ON_SITE: "an on-site", HYBRID: "a hybrid" };
+
+export function offerRenderData(d: OfferDetails | null): CertificateData["offer"] {
+  if (!d) return undefined;
+  return {
+    offerType: d.offerType,
+    role: d.role,
+    institution: d.institution,
+    startDate: parseISODate(d.startDate)!,
+    duration: d.duration.label,
+    mode: INTERNSHIP_MODE_LABELS[d.mode],
+    modeInternship: MODE_INTERNSHIP[d.mode],
+    stipend: d.stipend?.label ?? null,
+    greetingName: d.greetingName,
+  };
+}
+
 function storedInternship(c: Pick<Credential, "credential_type" | "details">): InternshipDetails | null {
   if (c.credential_type !== "INTERNSHIP_COMPLETION") return null;
   return storedInternshipDetailsSchema.parse(c.details);
 }
 
-function typeContextOf(internship: InternshipDetails | null): string | null {
-  return internship ? internshipDedupeContext(internship) : null;
+function typeContextOf(internship: InternshipDetails | null, offer: OfferDetails | null = null): string | null {
+  if (internship) return internshipDedupeContext(internship);
+  if (offer) return offerDedupeContext(offer);
+  return null;
 }
 
 function internshipRenderData(d: InternshipDetails | null): CertificateData["internship"] {
@@ -197,6 +242,7 @@ function certificateDataOf(c: Credential): CertificateData {
     certificateId: c.certificate_id,
     verifyUrl: verificationUrl(c.verification_token),
     internship: internshipRenderData(storedInternship(c)),
+    offer: offerRenderData(storedOffer(c)),
   };
 }
 
@@ -232,10 +278,16 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
     throw new CredentialError(`This program issues ${typeLabel(credentialType)} certificates, not ${typeLabel(input.credentialType)}.`, "VALIDATION");
   }
   const internship = credentialType === "INTERNSHIP_COMPLETION" ? parseInternship(input.internship) : null;
-  const typeContext = typeContextOf(internship);
+  const offer = credentialType === "OFFER_LETTER" ? parseOffer(input.offer, input.fullName) : null;
+  const typeContext = typeContextOf(internship, offer);
 
-  if (!internship && !input.completionDate) throw new CredentialError("Enter the completion date.", "VALIDATION");
-  const completionDate = internship ? parseISODate(internship.endDate) : parseISODate(input.completionDate!);
+  if (!internship && !offer && !input.completionDate) throw new CredentialError("Enter the completion date.", "VALIDATION");
+  // An offer letter is dated the day it is issued; its start date may be in the future.
+  const completionDate = internship
+    ? parseISODate(internship.endDate)
+    : offer
+      ? indianDate(now())
+      : parseISODate(input.completionDate!);
   if (!completionDate) throw new CredentialError("Completion date is not a real date.", "VALIDATION");
   const today = indianDate(now());
   if (completionDate.getTime() > today.getTime()) {
@@ -279,7 +331,11 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
     certificateId: generateCertificateId({ programCode: course.code, year: indianYear(now()) }),
     verifyUrl: verificationUrl("x".repeat(22)),
     internship: internshipRenderData(internship),
+    offer: offerRenderData(offer),
   };
+  if (offer && !spec.fieldConfig.copy?.[offer.offerType]) {
+    throw new CredentialError("This program's active template has no wording for this offer type. Upload an offer letter template version.", "CONFIG");
+  }
   if (internship && !spec.fieldConfig.fields.internship_title) {
     throw new CredentialError("This program's active template has no internship name field (internship_title). Upload an internship template version.", "CONFIG");
   }
@@ -301,8 +357,9 @@ export async function planIssue(input: z.output<typeof issueInputSchema>, deps: 
     issueDate,
     expiresAt,
     credentialType,
-    details: internship ?? {},
+    details: internship ?? offer ?? {},
     internship,
+    offer,
     typeContext,
     dedupe,
     warnings,
@@ -328,6 +385,7 @@ export async function previewIssue(raw: IssueInput, deps: CredentialDeps = defau
       certificateId: generateCertificateId({ programCode: plan.course.code, year: plan.issueDate.getUTCFullYear() }),
       verifyUrl: verificationUrl("PREVIEWxxxxxxxxxxxxxxx"),
       internship: internshipRenderData(plan.internship),
+      offer: offerRenderData(plan.offer),
     },
     assetLoader(deps.storage),
   );
@@ -362,7 +420,11 @@ export async function issueCredential(
     // collided with: that is our own submission, not a duplicate.
     const mine = await db.credential.findUnique({ where: { idempotency_key: input.idempotencyKey } });
     if (mine) return resumeExisting(mine, input, actor, deps);
-    const scope = plan.internship ? " for this internship (same title and dates)" : `for this program${plan.batch ? " and cohort" : " and completion date"}`;
+    const scope = plan.internship
+      ? " for this internship (same title and dates)"
+      : plan.offer
+        ? " for this offer (same offer type, role and start date)"
+        : `for this program${plan.batch ? " and cohort" : " and completion date"}`;
     throw new CredentialError(
       `This learner already has an active credential ${scope.trim()} (${plan.dedupe.existingCertificateId}). Use Reissue to correct it.`,
       "DUPLICATE",
@@ -505,7 +567,7 @@ export async function renderAndFinalize(credentialId: string, actor: StaffUser, 
           courseId: current.course_id,
           batchId: current.batch_id,
           completionDate: current.completion_date,
-          typeContext: typeContextOf(storedInternship(current)),
+          typeContext: typeContextOf(storedInternship(current), storedOffer(current)),
         });
       }
       const done = await tx.credential.update({
@@ -592,6 +654,10 @@ export async function deliverCredentialEmail(
       const i = internshipRenderData(storedInternship(c));
       return i ? { title: i.title, startDate: i.startDate, endDate: i.endDate, duration: i.duration } : null;
     })(),
+    offer: (() => {
+      const o = offerRenderData(storedOffer(c));
+      return o ? { role: o.role, startDate: o.startDate, offerType: o.offerType } : null;
+    })(),
   });
   let result: SendEmailResult;
   try {
@@ -664,6 +730,8 @@ export const reissueSchema = z.object({
   completionDate: isoDate.optional(),
   /** Internship corrections. Omitted fields keep the original's values; the duration is recomputed. */
   internship: z.record(z.string(), z.unknown()).optional(),
+  /** Offer letter corrections (a revised offer). Omitted fields keep the original's values. */
+  offer: z.record(z.string(), z.unknown()).optional(),
   batchId: z.string().min(1).nullable().optional(),
   templateId: z.string().uuid().optional(),
   reason: z.string().trim().min(5, "Give a reason for the reissue (at least 5 characters)").max(1000),
@@ -711,10 +779,16 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
     void _computed;
     internship = parseInternship({ ...base, ...(input.internship ?? {}) });
   }
-  const typeContext = typeContextOf(internship);
+  const originalOffer = storedOffer(parent);
+  const offer = originalOffer
+    ? parseOffer({ ...offerDetailsToInput(originalOffer), ...(input.offer ?? {}) }, input.fullName ?? parent.learner_name)
+    : null;
+  const typeContext = typeContextOf(internship, offer);
   const completionDate = internship
     ? parseISODate(internship.endDate)
-    : input.completionDate
+    : offer
+      ? indianDate(deps.now())
+      : input.completionDate
       ? parseISODate(input.completionDate)
       : parent.completion_date;
   if (!completionDate) throw new CredentialError("Completion date is not a real date.", "VALIDATION");
@@ -742,6 +816,7 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
       certificateId: generateCertificateId({ programCode: parent.course.code, year: issueDate.getUTCFullYear() }),
       verifyUrl: verificationUrl("x".repeat(22)),
       internship: internshipRenderData(internship),
+      offer: offerRenderData(offer),
     },
     assetLoader(deps.storage),
   );
@@ -765,7 +840,7 @@ export async function reissueCredential(parentId: string, raw: ReissueInput, act
             completion_date: completionDate,
             completion_context: typeContext ?? completionContext(batchId, completionDate),
             credential_type: parent.credential_type,
-            details: (internship ?? {}) as Prisma.InputJsonValue,
+            details: (internship ?? offer ?? {}) as Prisma.InputJsonValue,
             issued_at: deps.now(),
             expires_at: expiresAt,
             status: "ISSUING",

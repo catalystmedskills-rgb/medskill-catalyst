@@ -33,6 +33,7 @@ export async function listCredentials(f: ListFilters, includePrivate: boolean) {
       { certificate_id: { contains: q.toUpperCase() } },
       { learner_name: { contains: q, mode: "insensitive" } },
       { details: { path: ["internshipTitle"], string_contains: q } },
+      { details: { path: ["role"], string_contains: q } },
     ];
     if (includePrivate) or.push({ student: { email: { contains: q.toLowerCase(), mode: "insensitive" } } });
     and.push({ OR: or });
@@ -82,7 +83,13 @@ export async function listCredentials(f: ListFilters, includePrivate: boolean) {
       id: r.id,
       certificateId: r.certificate_id,
       credentialType: r.credential_type as CredentialType,
-      internshipTitle: r.credential_type === "INTERNSHIP_COMPLETION" ? ((r.details as { internshipTitle?: string }).internshipTitle ?? null) : null,
+      /** Internship name or offered role, shown under the type. */
+      subtitle:
+        r.credential_type === "INTERNSHIP_COMPLETION"
+          ? ((r.details as { internshipTitle?: string }).internshipTitle ?? null)
+          : r.credential_type === "OFFER_LETTER"
+            ? ((r.details as { role?: string }).role ?? null)
+            : null,
       learnerName: r.learner_name,
       email: includePrivate ? r.student.email : null,
       programName: r.program_name,

@@ -139,3 +139,28 @@ Owner requirement: internship completion certificates on the same platform. Buil
 - **Validation (4 Oct 2026).** Type-check and production build pass; 128 tests pass (21 new). Browser, local dev server on the local rehearsal DB, email off: issue → review (3 Months) → preview PDF → issue MSC-2026-INT-JWCEXK → public page and API (no email/supervisor/mode/location/hours) → PDF → reissue with corrected end date (2 Months; original superseded) → list type filter → dashboard. Found and fixed in the browser: the dev internship layout overlapped the dev background's "For successfully completing" line.
 - **Open.** Final internship artwork (owner). Production: migration + deploy + creating the INT program are approval gates. **Signature exposure:** Gagan's signature PNG is committed and the GitHub repo is public (see ACCEPTANCE_AND_SECURITY.md, Known issues).
 
+### Continuation, 2026-10-12: offer letters
+
+Owner requirement: offer letters for incoming interns and campus ambassadors, issued like
+certificates. Built as the third credential type (`OFFER_LETTER`), one program (OFR), offer
+type (Internship / Campus Ambassador) and role per letter; letter rebuilt from the owner's
+sample. Decisions in `OFFER_LETTER_PLAN.md`.
+
+- Renderer (general): paragraph boxes with **bold** runs (glued punctuation never breaks),
+  paragraph-first wrapping, letter-spacing, top alignment, DD/MM/YYYY dates, styled prefixes
+  ("Ref:" grey before a navy value), per-offer-type wording with placeholders in the
+  template config. Certificate templates are unaffected (course package byte-identical).
+- Registry: offer schema (stipend in paise, INR label: the font has no ₹ glyph), greeting
+  name, duplicate context, public allowlist (offer type, role, start date).
+- Admin: type-aware issue form, review, preview, detail and revised-offer reissue; bulk
+  columns and template; search by role; public page reads "Withdrawn" when revoked.
+- Found and fixed while testing: italic font blank when subset (embedded whole); paragraphs
+  shrinking instead of wrapping; space before a bold role's full stop; expectation bullets
+  colliding when wrapped; Ref box too narrow for long program codes.
+- Validation: 147 tests (15 new), type-check, production build. Local rehearsal of the
+  migration, program creation, template upload/activation, then a browser issue of a Campus
+  Ambassador letter, public page/API leak check, PDF and QR decode.
+- Open: owner approval of the Campus Ambassador wording; production go-live (approval
+  gates). New npm advisories (next, sharp, source-map-js) published since 2026-10-04,
+  unrelated to this change.
+

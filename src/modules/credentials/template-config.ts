@@ -47,12 +47,23 @@ export const textBoxSchema = z
     size: z.number().min(4).max(120),
     /** Fit rule: shrink toward minSize, then wrap up to maxLines; beyond that issuance is blocked. */
     minSize: z.number().min(4).max(120),
-    maxLines: z.number().int().min(1).max(3).default(1),
+    maxLines: z.number().int().min(1).max(8).default(1),
     lineHeight: z.number().min(0.9).max(2).default(1.15),
     align: z.enum(["left", "center", "right"]).default("left"),
     color: hex.default("#0A2A43"),
     /** Static text printed before the value, e.g. "Completed on ". */
     prefix: z.string().max(80).default(""),
+    /** Prefix in its own style ("Ref: " grey regular before a navy semibold value). */
+    prefixFont: fontRefSchema.optional(),
+    prefixColor: hex.optional(),
+    /** Letters (paragraphs): **bold** spans in the text are set in this font. */
+    boldFont: fontRefSchema.optional(),
+    /** Letter-spacing in em (single-line labels such as "INTERNSHIP OFFER"). */
+    tracking: z.number().min(0).max(0.5).default(0),
+    /** Paragraphs read from the top of their box; labels centre. */
+    valign: z.enum(["center", "top"]).default("center"),
+    /** Dates: "15 July 2026" (certificates) or "15/07/2026" (letters). */
+    dateStyle: z.enum(["long", "dmy"]).default("long"),
   })
   .refine((b) => b.minSize <= b.size, { message: "minSize must be ≤ size" });
 export type TextBox = z.infer<typeof textBoxSchema>;
@@ -73,8 +84,40 @@ export const FIELD_KEYS = [
   "internship_period",
   "duration",
   "total_hours",
+  // Offer letters (credential type OFFER_LETTER). Copy keys read the template's
+  // per-offer-type wording; the rest are the letter's own details.
+  "offer_eyebrow",
+  "offer_salutation",
+  "offer_opening",
+  "offer_body",
+  "offer_expect_1",
+  "offer_expect_2",
+  "offer_expect_3",
+  "offer_closing",
+  "offer_signoff",
+  "recipient_institution",
+  "offer_role",
+  "offer_duration",
+  "offer_mode",
+  "offer_start_date",
+  "offer_stipend_label",
+  "offer_stipend",
 ] as const;
 export type FieldKey = (typeof FIELD_KEYS)[number];
+
+const copyText = z.string().min(1).max(700);
+export const OFFER_COPY_KEYS = ["eyebrow", "opening", "body", "expect1", "expect2", "expect3", "closing", "signoff"] as const;
+export const offerCopySchema = z.object({
+  eyebrow: copyText,
+  opening: copyText,
+  body: copyText,
+  expect1: copyText,
+  expect2: copyText,
+  expect3: copyText,
+  closing: copyText,
+  signoff: copyText,
+});
+export type OfferCopy = z.infer<typeof offerCopySchema>;
 
 export const qrBoxSchema = z.object({
   x: z.number().min(0),
@@ -107,9 +150,33 @@ export const fieldConfigSchema = z.object({
       duration: textBoxSchema.optional(),
       /** Printed only when total hours were supplied. */
       total_hours: textBoxSchema.optional(),
+      offer_eyebrow: textBoxSchema.optional(),
+      offer_salutation: textBoxSchema.optional(),
+      offer_opening: textBoxSchema.optional(),
+      offer_body: textBoxSchema.optional(),
+      offer_expect_1: textBoxSchema.optional(),
+      offer_expect_2: textBoxSchema.optional(),
+      offer_expect_3: textBoxSchema.optional(),
+      offer_closing: textBoxSchema.optional(),
+      offer_signoff: textBoxSchema.optional(),
+      recipient_institution: textBoxSchema.optional(),
+      offer_role: textBoxSchema.optional(),
+      offer_duration: textBoxSchema.optional(),
+      offer_mode: textBoxSchema.optional(),
+      offer_start_date: textBoxSchema.optional(),
+      /** Printed only when the letter has a stipend. */
+      offer_stipend_label: textBoxSchema.optional(),
+      offer_stipend: textBoxSchema.optional(),
     })
     .strict(),
   qr: qrBoxSchema,
+  /**
+   * Letter wording per offer type (offer letters only). Placeholders: {firstName},
+   * {role}, {institution}, {modeInternship} ("a virtual" / "an on-site" / "a hybrid"),
+   * {atInstitution} (" at <institution>" or ""). **bold** spans need the box's boldFont.
+   * Wording is part of the template version: changing it means a new, reviewed version.
+   */
+  copy: z.record(z.string(), offerCopySchema).optional(),
 });
 export type FieldConfig = z.infer<typeof fieldConfigSchema>;
 
@@ -195,6 +262,16 @@ export const DEV_INTERNSHIP_TEMPLATE_FIELD_CONFIG: FieldConfig = fieldConfigSche
  */
 export function missingRequiredFields(type: string, config: FieldConfig): string[] {
   const f = config.fields;
+  if (type === "OFFER_LETTER") {
+    const missing: string[] = [];
+    for (const k of ["learner_name", "offer_opening", "offer_role", "offer_start_date", "certificate_id", "issue_date"] as const) {
+      if (!f[k]) missing.push(k.replace(/_/g, " "));
+    }
+    for (const offerType of ["INTERNSHIP", "CAMPUS_AMBASSADOR"]) {
+      if (!config.copy?.[offerType]) missing.push(`wording for ${offerType.toLowerCase().replace("_", " ")} offers`);
+    }
+    return missing;
+  }
   if (type !== "INTERNSHIP_COMPLETION") {
     return [...(f.program_name ? [] : ["program name"]), ...(f.completion_date ? [] : ["completion date"])];
   }
