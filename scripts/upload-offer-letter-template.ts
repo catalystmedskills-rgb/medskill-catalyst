@@ -22,7 +22,7 @@ const slots = {
   asset2: "assets/fonts/InstrumentSans-600.ttf",
   asset4: "assets/credentials/foundation-v1/signature-gagan-victor.png",
 } as const;
-const NAME = "Offer letter v1";
+const NAME = "Offer letter v2";
 
 async function main() {
   const email = process.env.ACTOR_EMAIL;
@@ -50,7 +50,7 @@ async function main() {
           background: { kind: "storage", path: bg.path, sha256: bg.sha256, mime: bg.mime },
           fieldConfig: resolved.fieldConfig,
           signatures: resolved.signatures ?? [],
-          notes: "Owner's offer letter sample (2026-10-12) rebuilt; Campus Ambassador wording drafted for approval. Gagan Victor signature authorized as Founder.",
+          notes: "v2 (owner, 2026-10-12): larger logo, smaller heading and eyebrow; Campus Ambassador eyebrow without \"Offer\". Gagan Victor signature authorized as Founder.",
         },
         actor,
       );

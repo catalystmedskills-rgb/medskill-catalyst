@@ -38,7 +38,7 @@ export const OFFER_COPY: Record<"INTERNSHIP" | "CAMPUS_AMBASSADOR", OfferCopy> =
   },
   // DRAFT for owner approval (2026-10-12), adapted from the internship letter.
   CAMPUS_AMBASSADOR: {
-    eyebrow: "CAMPUS AMBASSADOR OFFER",
+    eyebrow: "CAMPUS AMBASSADOR",
     opening: "Congratulations. We are pleased to offer you the role of **{role}** with MedSkills Catalyst{atInstitution}.",
     body: "Your interest in MedTech and the initiative you showed during our evaluation stood out. As an ambassador you will represent MedSkills Catalyst on your campus, help fellow students discover careers in MedTech, and work with our team on events and outreach.",
     expect1: "Represent MedSkills Catalyst professionally on campus",
@@ -91,18 +91,20 @@ async function drawLetterArtwork(): Promise<Uint8Array> {
   page.drawRectangle({ x: 534, y: H - 6, width: W - 534, height: 6, color: color(CYAN) });
 
   // Letterhead.
-  page.drawImage(logo, { x: 47.5, y: H - 87.5, width: 47, height: 47 });
-  text("MedSkills Catalyst", 105, 59.5, 13, semibold, NAVY);
-  text("Upskill to ", 105, 78, 9, regular, SLATE);
-  text("upscale.", 105 + regular.widthOfTextAtSize("Upskill to ", 9), 78, 9, italic, BLUE);
+  // Logo 60 pt (owner, 2026-10-12: slightly larger than the sample), same centre line.
+  page.drawImage(logo, { x: 46, y: H - 94, width: 60, height: 60 });
+  text("MedSkills Catalyst", 116, 59.5, 13, semibold, NAVY);
+  text("Upskill to ", 116, 78, 9, regular, SLATE);
+  text("upscale.", 116 + regular.widthOfTextAtSize("Upskill to ", 9), 78, 9, italic, BLUE);
   // "Ref:" / "Date:" are styled prefixes of their (right-aligned) fields, so any ID length fits.
   // QR caption (the QR itself is drawn by the renderer).
   rightText("Scan to verify", 547 - (60 - regular.widthOfTextAtSize("Scan to verify", 7)) / 2, 158, 7, regular, SLATE);
 
   // Eyebrow rule; heading.
   page.drawRectangle({ x: 47, y: H - 122.5, width: 30, height: 0.9, color: color(BLUE) });
-  text("Offer ", 47, 174, 42, semibold, NAVY);
-  text("letter.", 47 + semibold.widthOfTextAtSize("Offer ", 42), 174, 42, italic, BLUE);
+  // Heading 36 pt (owner, 2026-10-12: slightly smaller than the sample).
+  text("Offer ", 47, 170, 36, semibold, NAVY);
+  text("letter.", 47 + semibold.widthOfTextAtSize("Offer ", 36), 170, 36, italic, BLUE);
   text("TO", 47, 217, 7.5, regular, SLATE, 0.2);
 
   // Role details card and "What we expect" card.
@@ -162,7 +164,7 @@ export async function buildOfferLetterPackage() {
     fields: {
       certificate_id: box(330, 50.5, 217, 11, 9, B, { align: "right", minSize: 7, prefix: "Ref: ", prefixFont: R, prefixColor: SLATE }),
       issue_date: box(330, 68.5, 217, 11, 9, B, { align: "right", dateStyle: "dmy", prefix: "Date: ", prefixFont: R, prefixColor: SLATE }),
-      offer_eyebrow: box(86, 117.5, 320, 11, 9, B, { color: BLUE, tracking: 0.25, minSize: 7 }),
+      offer_eyebrow: box(86, 118, 320, 10, 8, B, { color: BLUE, tracking: 0.25, minSize: 6.5 }),
       learner_name: box(47, 230, 420, 21, 17, B, { minSize: 11 }),
       recipient_institution: box(47, 259, 420, 13, 9.5, R, { color: SLATE, minSize: 7.5 }),
       offer_salutation: box(47, 296.5, 420, 12, 9.5, B, { color: INK }),
