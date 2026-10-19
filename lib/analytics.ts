@@ -35,8 +35,17 @@ export function initAnalytics() {
 }
 
 export function track(event: WebinarEvent, props: EventProps = {}) {
+  trackEvent(event, props, "webinar_landing");
+}
+
+/**
+ * Surface-agnostic variant of `track` for other landing pages. Same fan-out
+ * (PostHog when configured, dataLayer, gtag). Never pass personal data —
+ * names, emails and phone numbers must not reach analytics.
+ */
+export function trackEvent(event: string, props: EventProps = {}, surface: string) {
   if (typeof window === "undefined") return;
-  const payload = { ...props, surface: "webinar_landing" };
+  const payload = { ...props, surface };
 
   if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
     try {
