@@ -274,6 +274,7 @@ model Lead {
 
   invoices         Invoice[]
   activities       Activity[]
+  masterclass_registrations MasterclassRegistration[]
   enrollment_links EnrollmentLink[]
   enrollments      Enrollment[]
   assigned_to      StaffUser?       @relation("AssignedLeads", fields: [assigned_to_id], references: [id])
@@ -773,4 +774,74 @@ model CmsLoginAttempt {
   @@index([identifier, created_at])
   @@index([ip, created_at])
   @@map("cms_login_attempts")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Masterclass registrations (src/modules/masterclass)
+// ─────────────────────────────────────────────────────────────
+
+/// Where the student is in their studies — NOT a calendar graduation year.
+enum MasterclassAcademicStatus {
+  FIRST_YEAR
+  SECOND_YEAR
+  THIRD_YEAR
+  GRADUATE
+}
+
+/// Lifecycle of the Zoom confirmation email. SENT means Resend accepted the
+/// message and returned an id — never set on a guess.
+enum MasterclassEmailStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
+/// One row per student per event. Every registration is also mirrored into
+/// `leads` (lead_id) so it shows up in the CRM.
+model MasterclassRegistration {
+  id                   String                    @id @default(cuid())
+  event_key            String
+  full_name            String
+  /// Trimmed + lower-cased before storage.
+  email                String
+  /// E.164, e.g. +919876543210.
+  phone                String
+  university           String
+  /// "directory" when picked from the AISHE list, "manual" when typed in.
+  university_source    String                    @default("manual")
+  academic_status      MasterclassAcademicStatus
+  consent_at           DateTime                  @db.Timestamptz(6)
+  consent_text_version String
+  utm_source           String?
+  utm_medium           String?
+  utm_campaign         String?
+  utm_content          String?
+  utm_term             String?
+  gclid                String?
+  fbclid               String?
+  referrer             String?
+  landing_page         String?
+  lead_id              BigInt?
+
+  email_status         MasterclassEmailStatus    @default(PENDING)
+  email_attempts       Int                       @default(0)
+  email_last_error     String?
+  email_provider_id    String?
+  email_sent_at        DateTime?                 @db.Timestamptz(6)
+  email_next_attempt_at DateTime?                @db.Timestamptz(6)
+  /// Set when a worker claims the row (SENDING); a stale claim is reclaimable.
+  email_claimed_at     DateTime?                 @db.Timestamptz(6)
+
+  created_at           DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime                  @updatedAt @db.Timestamptz(6)
+
+  lead Lead? @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+
+  @@unique([event_key, email])
+  @@unique([event_key, phone])
+  @@index([event_key, created_at(sort: Desc)])
+  @@index([email_status, email_next_attempt_at])
+  @@index([lead_id])
+  @@map("masterclass_registrations")
 }
