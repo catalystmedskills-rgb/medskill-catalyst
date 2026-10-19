@@ -243,3 +243,26 @@ export function rateLimitMessage(retryAfterSeconds: number): string {
   const minutes = Math.ceil(retryAfterSeconds / 60);
   return `Too many incorrect passcode attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
 }
+
+// ── Public form throttling ─────────────────────────────────────────
+
+/**
+ * Count one request against a public endpoint's allowance, using the same
+ * two-layer counter as the passcode guard. Keys are namespaced by surface (see
+ * clientKey), so they never mix with passcode failures in the shared table.
+ *
+ * Unlike the passcode guard this runs on every request, which is the point:
+ * it bounds how many submissions one client can make per window. `limit`
+ * requests are allowed; the next one is refused.
+ */
+export async function consumeRequestAllowance(
+  key: string,
+  cfg: RateLimitConfig,
+): Promise<RateLimitVerdict> {
+  // The underlying counter refuses once the count reaches its limit, so +1
+  // makes `limit` the number of requests that get through.
+  const counter = { limit: cfg.limit + 1, windowSeconds: cfg.windowSeconds };
+  const local = checkAdminAuthRateLimit(key, counter);
+  if (local.blocked) return local;
+  return recordAdminAuthFailure(key, counter);
+}

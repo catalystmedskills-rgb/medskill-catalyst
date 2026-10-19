@@ -38,6 +38,7 @@ async function AdminShell({ children, mode }: { children: ReactNode; mode: "pass
   const nav = [
     { href: "/admin", label: "Dashboard" },
     { href: "/admin/leads", label: "Leads" },
+    { href: "/admin/masterclass", label: "Masterclass" },
     { href: "/admin/careers", label: "Careers" },
     { href: "/admin/credentials", label: "Credentials", show: can(staff.role, Permission.CredentialsView) },
     { href: "/admin/staff", label: "Staff", show: mode !== "passcode" && can(staff.role, Permission.StaffManage) },

@@ -5,10 +5,25 @@
     {
       "source": "/MedSkills-Catalyst-Brochure.pdf",
       "headers": [
-        { "key": "Content-Disposition", "value": "inline; filename=\"MedSkills-Catalyst-Brochure.pdf\"" },
-        { "key": "Content-Type", "value": "application/pdf" },
-        { "key": "Cache-Control", "value": "public, max-age=3600" }
+        {
+          "key": "Content-Disposition",
+          "value": "inline; filename=\"MedSkills-Catalyst-Brochure.pdf\""
+        },
+        {
+          "key": "Content-Type",
+          "value": "application/pdf"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
       ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/masterclass-emails",
+      "schedule": "0 4 * * *"
     }
   ]
 }

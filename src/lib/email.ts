@@ -14,7 +14,17 @@ export async function sendEmail(opts: {
   to: string | string[];
   subject: string;
   html: string;
+  /** Plain-text alternative; improves deliverability and accessibility. */
+  text?: string;
   replyTo?: string;
+  /**
+   * Resend de-duplicates requests carrying the same key for 24 hours, so a
+   * retry after an ambiguous failure (timeout after Resend accepted) cannot
+   * deliver the same email twice.
+   */
+  idempotencyKey?: string;
+  /** Abort the request after this long. Defaults to no client-side timeout. */
+  timeoutMs?: number;
 }): Promise<SendEmailResult> {
   const key = process.env.RESEND_API_KEY || process.env.Resend_Api_key;
   if (!key) return { ok: false, reason: "RESEND_API_KEY missing in this deployment's env" };
@@ -22,14 +32,20 @@ export async function sendEmail(opts: {
   try {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        ...(opts.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : {}),
+      },
       body: JSON.stringify({
         from: FROM,
         to: Array.isArray(opts.to) ? opts.to : [opts.to],
         subject: opts.subject,
         html: opts.html,
+        ...(opts.text ? { text: opts.text } : {}),
         ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
       }),
+      ...(opts.timeoutMs ? { signal: AbortSignal.timeout(opts.timeoutMs) } : {}),
     });
     if (!r.ok) {
       const detail = (await r.text()).slice(0, 300);
