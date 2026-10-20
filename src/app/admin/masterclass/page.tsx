@@ -90,6 +90,11 @@ export default async function MasterclassAdminPage({
             </ul>
           </>
         )}
+        {readiness.warnings.map((w) => (
+          <p key={w} className="mt-1 font-semibold text-warning">
+            Warning: {w}.
+          </p>
+        ))}
         {!cfg.whatsappUrl && (
           <p className="mt-1 text-muted">
             MASTERCLASS_WHATSAPP_COMMUNITY_URL is not set — the thank-you page will not redirect to WhatsApp.

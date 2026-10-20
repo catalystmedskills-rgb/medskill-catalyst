@@ -117,7 +117,7 @@ const fullEnv = {
 };
 
 test("registration opens only when flag, Zoom link, time and Resend are all valid", () => {
-  assert.deepEqual(masterclassReadiness(readMasterclassConfig(fullEnv)), { open: true, missing: [] });
+  assert.deepEqual(masterclassReadiness(readMasterclassConfig(fullEnv)), { open: true, missing: [], warnings: [] });
   for (const k of ["MASTERCLASS_REGISTRATION_OPEN", "MASTERCLASS_ZOOM_JOIN_URL", "MASTERCLASS_START_TIME_IST", "RESEND_API_KEY"]) {
     const r = masterclassReadiness(readMasterclassConfig({ ...fullEnv, [k]: "" }));
     assert.equal(r.open, false, `${k} missing should close registration`);
@@ -238,13 +238,18 @@ test("one real deadline for everyone: free, then ₹999, then closed at session 
   assert.equal(pricingAt(cfg, new Date("2026-10-24T12:30:00Z")).phase, "closed");
 });
 
-test("without a deadline registration stays free; paid phase requires Razorpay keys", () => {
+test("without a deadline registration stays free; Razorpay is only required once the offer ends", () => {
   const noDeadline = readMasterclassConfig(fullEnv);
   assert.equal(pricingAt(noDeadline, new Date("2026-10-23T00:00:00Z")).phase, "free");
   const noKeys = readMasterclassConfig({ ...fullEnv, MASTERCLASS_FREE_UNTIL: FREE_UNTIL });
-  const r = masterclassReadiness(noKeys);
-  assert.equal(r.open, false);
-  assert.ok(r.missing.some((m) => m.includes("Razorpay")));
+  // Before the deadline: free registration works, admin is warned.
+  const before = masterclassReadiness(noKeys, new Date("2026-10-21T00:00:00Z"));
+  assert.equal(before.open, true);
+  assert.ok(before.warnings.some((w) => w.includes("Razorpay")));
+  // After it: registration pauses instead of pretending to take payment.
+  const after = masterclassReadiness(noKeys, new Date("2026-10-23T00:00:00Z"));
+  assert.equal(after.open, false);
+  assert.ok(after.missing.some((m) => m.includes("Razorpay")));
 });
 
 test("deadline label is in IST", () => {

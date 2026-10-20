@@ -45,6 +45,8 @@ export type MasterclassReadiness = {
   open: boolean;
   /** Human-readable list of what is missing or invalid. */
   missing: string[];
+  /** Problems that don't block registration yet but will (shown in admin). */
+  warnings: string[];
 };
 
 // Anything that still looks like a template value is treated as unset.
@@ -170,16 +172,22 @@ export function formatDeadline(d: Date): string {
   return `${parts.replace(/\b(am|pm)\b/, (s) => s.toUpperCase())} IST`;
 }
 
-export function masterclassReadiness(cfg: MasterclassConfig): MasterclassReadiness {
+export function masterclassReadiness(cfg: MasterclassConfig, now: Date = new Date()): MasterclassReadiness {
   const missing: string[] = [];
+  const warnings: string[] = [];
   if (!cfg.flagOn) missing.push("MASTERCLASS_REGISTRATION_OPEN is not \"true\"");
   if (!cfg.zoomUrl) missing.push("MASTERCLASS_ZOOM_JOIN_URL is missing or not a Zoom https link");
   if (!cfg.startTime) missing.push("MASTERCLASS_START_TIME_IST is missing or not HH:mm");
   if (!cfg.resendConfigured) missing.push("RESEND_API_KEY is missing");
+  // Razorpay is only needed once the free offer has ended. Before that, free
+  // registration works without it; after it, registration pauses rather than
+  // pretending to take a payment it can't.
   if (cfg.freeUntil && !cfg.razorpayConfigured) {
-    missing.push("MASTERCLASS_FREE_UNTIL is set but Razorpay keys are missing, so paid registration can't work");
+    const message = "Razorpay keys (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET) are not readable by this deployment";
+    if (pricingAt(cfg, now).phase === "paid") missing.push(`${message}, so paid registration is paused`);
+    else warnings.push(`${message}: registration will pause when the free offer ends unless they are fixed`);
   }
-  return { open: missing.length === 0, missing };
+  return { open: missing.length === 0, missing, warnings };
 }
 
 /** "18:00" → "6:00 PM". */
