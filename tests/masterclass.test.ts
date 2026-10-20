@@ -289,7 +289,7 @@ test("academic status is offered as 1st–8th semester plus graduate; old year v
 // ── Personal 30-minute free hold ─────────────────────────────────────
 
 import { createHoldValue, readHoldValue, cookieFromHeader } from "../src/modules/masterclass/hold";
-import { holdEnabled } from "../src/modules/masterclass/config";
+import { holdEnabled, paidRegistrationAvailable } from "../src/modules/masterclass/config";
 
 const HOLD_ENV = {
   ...fullEnv,
@@ -332,12 +332,16 @@ test("the festive deadline still ends the offer for everyone, even mid-hold", ()
   assert.equal(pricingAt(cfg, new Date("2026-10-22T18:29:00Z"), hold).phase, "paid");
 });
 
-test("the hold is off without working payments or a signing secret, so nobody is locked out", () => {
-  const noRzp = readMasterclassConfig({ ...HOLD_ENV, RAZORPAY_KEY_ID: "", RAZORPAY_KEY_SECRET: "" });
-  assert.equal(holdEnabled(noRzp), false);
-  const first = new Date("2026-10-20T08:00:00Z");
-  assert.equal(pricingAt(noRzp, new Date("2026-10-20T10:00:00Z"), first).phase, "free");
-  assert.ok(masterclassReadiness(noRzp, new Date("2026-10-20T10:00:00Z")).warnings.some((w) => w.includes("personal free hold is off")));
+test("the hold runs without Razorpay; after it ends paid registration is paused, not faked", () => {
+  const noRzp = readMasterclassConfig({ ...HOLD_ENV, MASTERCLASS_FREE_UNTIL: "", RAZORPAY_KEY_ID: "", RAZORPAY_KEY_SECRET: "" });
+  assert.equal(holdEnabled(noRzp), true);
+  assert.equal(paidRegistrationAvailable(noRzp), false);
+  const first = new Date("2026-10-21T08:00:00Z");
+  assert.equal(pricingAt(noRzp, new Date("2026-10-21T08:29:00Z"), first).phase, "free");
+  assert.equal(pricingAt(noRzp, new Date("2026-10-21T08:30:00Z"), first).phase, "paid");
+  const r = masterclassReadiness(noRzp, new Date("2026-10-21T08:30:00Z"));
+  assert.equal(r.open, true);
+  assert.ok(r.warnings.some((w) => w.includes("Registration is paused")));
   assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, CRON_SECRET: "" })), false);
   assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, MASTERCLASS_HOLD_MINUTES: "0" })), false);
 });

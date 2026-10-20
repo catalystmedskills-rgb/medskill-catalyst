@@ -5,6 +5,7 @@ import { MASTERCLASS_EVENT, PRIVACY_POLICY_PATH, SITE_URL, SUPPORT_EMAIL } from 
 import { cookies } from "next/headers";
 import { HOLD_COOKIE, readHoldValue } from "@/src/modules/masterclass/hold";
 import {
+  paidRegistrationAvailable,
   holdEnabled,
   formatDeadline,
   masterclassReadiness,
@@ -224,6 +225,7 @@ export default async function MasterclassLandingPage() {
     freeUntilISO: config.freeUntil?.toISOString() ?? null,
     freeUntilLabel: config.freeUntil ? formatDeadline(config.freeUntil) : null,
     holdEnabled: holdEnabled(config),
+    paymentsReady: paidRegistrationAvailable(config),
     holdMinutes: config.holdMinutes,
     holdEndsISO: pricingNow.holdEndsAt?.toISOString() ?? null,
   };

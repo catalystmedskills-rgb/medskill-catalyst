@@ -3,7 +3,13 @@ import { z } from "zod";
 import { clientKey, consumeRequestAllowance } from "@/src/lib/rate-limit";
 import { sendMetaEvent, metaContextFromRequest } from "@/src/lib/meta-capi";
 import { registrationRequestSchema } from "@/src/modules/masterclass/schema";
-import { readMasterclassConfig, masterclassReadiness, pricingAt, holdEnabled } from "@/src/modules/masterclass/config";
+import {
+  readMasterclassConfig,
+  masterclassReadiness,
+  pricingAt,
+  holdEnabled,
+  paidRegistrationAvailable,
+} from "@/src/modules/masterclass/config";
 import { HOLD_COOKIE, cookieFromHeader, readHoldValue } from "@/src/modules/masterclass/hold";
 import { MASTERCLASS_EVENT } from "@/src/modules/masterclass/event";
 import {
@@ -109,6 +115,17 @@ export async function POST(req: Request) {
   // Saved but unpaid: hand back a Razorpay order. The Zoom email waits for a
   // verified payment (see /api/masterclass/verify and the Razorpay webhook).
   if (outcome.paymentStatus === "PENDING" || outcome.paymentStatus === "FAILED") {
+    // Payments can't be taken yet: keep the details, but don't pretend.
+    if (!paidRegistrationAvailable(config)) {
+      return json(
+        {
+          error:
+            "Registration is paused right now. Your details are saved and we'll contact you as soon as registration reopens.",
+          paused: true,
+        },
+        503,
+      );
+    }
     try {
       const order = await createMasterclassOrder(outcome.id);
       return json({

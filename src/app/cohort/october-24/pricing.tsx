@@ -26,6 +26,8 @@ export type PricingProps = {
   holdMinutes: number;
   /** This visitor's hold end, when the server already knew it at render time. */
   holdEndsISO: string | null;
+  /** Whether a ₹999 payment can be taken right now (Razorpay usable). */
+  paymentsReady: boolean;
 };
 
 export type OfferState = {
@@ -35,11 +37,6 @@ export type OfferState = {
   endsBy: "hold" | "festive" | null;
   holdEndsAt: Date | null;
 };
-
-const timeIST = (d: Date) =>
-  new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })
-    .format(d)
-    .replace(/\b(am|pm)\b/, (x) => x.toUpperCase());
 
 /** Current price state, flipping from free to paid on the client when a limit passes. */
 export function useOfferPhase(props: PricingProps): OfferState {
@@ -103,8 +100,16 @@ function Countdown({ ms }: { ms: number }) {
 }
 
 export function PricingBanner(props: PricingProps & OfferState) {
-  const { phase, msLeft, freeUntilLabel, endsBy, holdEndsAt, holdMinutes, freeUntilISO } = props;
-  const festiveOver = freeUntilISO ? Date.now() >= new Date(freeUntilISO).getTime() : false;
+  const { phase, msLeft, holdMinutes, paymentsReady } = props;
+
+  if (phase === "paid" && !paymentsReady) {
+    return (
+      <div role="status" className="rounded-msc-md border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-ink">
+        <strong className="font-semibold">Registration is paused.</strong> Your {holdMinutes}-minute free registration
+        window has ended. Please check back shortly.
+      </div>
+    );
+  }
 
   if (phase === "paid") {
     return (
@@ -113,11 +118,7 @@ export function PricingBanner(props: PricingProps & OfferState) {
           <span className="text-sm font-semibold text-brand-navy">Registration fee</span>
           <span className="font-display text-2xl font-bold text-brand-navy">{MASTERCLASS_EVENT.priceLabel}</span>
         </div>
-        <p className="mt-1 text-xs text-muted">
-          {festiveOver && freeUntilLabel
-            ? `The festive free-registration offer ended on ${freeUntilLabel}.`
-            : `Your ${holdMinutes}-minute free registration window has ended.`}
-        </p>
+        <p className="mt-1 text-xs text-muted">Your {holdMinutes}-minute free registration window has ended.</p>
       </div>
     );
   }
@@ -126,9 +127,7 @@ export function PricingBanner(props: PricingProps & OfferState) {
     <div className="rounded-msc-md border border-success/25 bg-success/5 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div>
-          <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-success">
-            {endsBy === "hold" ? "Festive offer · reserved for you" : "Festive offer"}
-          </p>
+          <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-success">Festive offer</p>
           <p className="mt-0.5 flex items-baseline gap-2">
             <span className="text-base font-semibold text-muted line-through decoration-2" aria-label={`Regular price ${MASTERCLASS_EVENT.priceLabel}`}>
               {MASTERCLASS_EVENT.priceLabel}
@@ -138,21 +137,6 @@ export function PricingBanner(props: PricingProps & OfferState) {
         </div>
         {msLeft !== null && msLeft > 0 && <Countdown ms={msLeft} />}
       </div>
-      {endsBy === "hold" && holdEndsAt ? (
-        <p className="mt-1.5 text-xs text-muted">
-          Your free registration is held for you until{" "}
-          <strong className="font-semibold text-ink">{timeIST(holdEndsAt)} IST</strong> ({holdMinutes} minutes from your
-          first visit). After that it&rsquo;s {MASTERCLASS_EVENT.priceLabel}.
-          {freeUntilLabel && <> The festive offer itself ends {freeUntilLabel}.</>}
-        </p>
-      ) : (
-        freeUntilLabel && (
-          <p className="mt-1.5 text-xs text-muted">
-            Free registration ends <strong className="font-semibold text-ink">{freeUntilLabel}</strong>. After that
-            it&rsquo;s {MASTERCLASS_EVENT.priceLabel}.
-          </p>
-        )
-      )}
     </div>
   );
 }

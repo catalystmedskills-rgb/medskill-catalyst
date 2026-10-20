@@ -138,13 +138,18 @@ function parseHoldMinutes(v: string | undefined): number {
 }
 
 /**
- * The personal 30-minute hold only runs when it can be enforced honestly: a
- * secret to sign it, and working payments for when it ends. Without Razorpay,
- * ending a hold would lock the visitor out rather than ask them to pay, so the
- * hold switches off and the shared deadline alone decides the price.
+ * The personal 30-minute hold runs whenever there is a secret to sign it.
+ * When it ends the price is ₹999; if Razorpay isn't usable at that point the
+ * register route pauses registration for that visitor rather than pretend to
+ * take a payment (see paidRegistrationAvailable).
  */
 export function holdEnabled(cfg: MasterclassConfig): boolean {
-  return cfg.holdMinutes > 0 && Boolean(cfg.holdSecret) && cfg.razorpayConfigured;
+  return cfg.holdMinutes > 0 && Boolean(cfg.holdSecret);
+}
+
+/** Whether a ₹999 registration can actually be taken right now. */
+export function paidRegistrationAvailable(cfg: MasterclassConfig): boolean {
+  return cfg.razorpayConfigured;
 }
 
 /**
@@ -222,10 +227,11 @@ export function masterclassReadiness(cfg: MasterclassConfig, now: Date = new Dat
     else warnings.push(`${message}: registration will pause when the free offer ends unless they are fixed`);
   }
   if (cfg.holdMinutes > 0 && !holdEnabled(cfg)) {
+    warnings.push("The personal free hold is off because no signing secret is set (MASTERCLASS_HOLD_SECRET or CRON_SECRET)");
+  }
+  if (holdEnabled(cfg) && !cfg.razorpayConfigured) {
     warnings.push(
-      cfg.razorpayConfigured
-        ? "The personal free hold is off because no signing secret is set (MASTERCLASS_HOLD_SECRET or CRON_SECRET)"
-        : "The personal free hold is off until the Razorpay keys are readable; registration stays free until the festive deadline",
+      "Razorpay keys are not readable by this deployment: visitors whose 30-minute free window has ended see 'Registration is paused' until they are fixed",
     );
   }
   return { open: missing.length === 0, missing, warnings };

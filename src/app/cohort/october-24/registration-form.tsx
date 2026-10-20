@@ -240,7 +240,8 @@ export function RegistrationForm({
   }
 
   const universitySource = watch("universitySource") ?? "manual";
-  const disabled = submitting || !registrationOpen;
+  const paused = phase === "paid" && !pricing.paymentsReady;
+  const disabled = submitting || !registrationOpen || paused;
 
   return (
     <form
