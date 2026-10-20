@@ -389,7 +389,8 @@ export default async function MasterclassLandingPage() {
                 <div className="mb-5">
                   <h2 className="font-display text-2xl font-bold text-brand-navy">Register for the Masterclass</h2>
                   <p className="mt-1.5 text-sm text-muted">
-                    {MASTERCLASS_EVENT.dayDateLabel} · Joining link sent to your email
+                    {MASTERCLASS_EVENT.dayDateLabel} · Joining link will be shared in the WhatsApp community on 24th
+                    morning
                   </p>
                 </div>
                 <RegistrationForm registrationOpen={open} pricing={pricing} closed={pricingNow.phase === "closed"} />
