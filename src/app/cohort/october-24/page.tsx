@@ -318,7 +318,7 @@ export default async function MasterclassLandingPage() {
                 Live Masterclass · {MASTERCLASS_EVENT.dateLabel}
               </p>
               <p className="mt-5 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy/60">
-                MedSkills Catalyst presents
+                Medtech 101
               </p>
               <p className="mt-1 font-display text-3xl font-bold uppercase tracking-tight text-brand-blue sm:text-4xl">
                 Do you know?
