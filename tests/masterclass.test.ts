@@ -6,6 +6,8 @@ import {
   registrationRequestSchema,
   maskEmail,
   firstNameOf,
+  ACADEMIC_STATUS_OPTIONS,
+  ACADEMIC_STATUS_LABELS,
 } from "../src/modules/masterclass/schema";
 import {
   readMasterclassConfig,
@@ -15,6 +17,9 @@ import {
   parseStartTime,
   timeLabel,
   zoomMeetingIdFrom,
+  parseFreeUntil,
+  pricingAt,
+  formatDeadline,
 } from "../src/modules/masterclass/config";
 import { nextAttemptAt, isPermanentEmailFailure, MAX_EMAIL_ATTEMPTS } from "../src/modules/masterclass/delivery";
 import { leadSourceFor } from "../src/modules/masterclass/attribution";
@@ -26,7 +31,7 @@ const valid = {
   phone: "98765 43210",
   university: " University of  Delhi ",
   universitySource: "directory",
-  academicStatus: "THIRD_YEAR",
+  academicStatus: "SEMESTER_5",
   consent: true,
 };
 
@@ -48,7 +53,7 @@ test("accepts a valid registration and normalizes every field", () => {
   assert.equal(r.email, "priya.sharma@gmail.com");
   assert.equal(r.phone, "+919876543210");
   assert.equal(r.university, "University of Delhi");
-  assert.equal(r.academicStatus, "THIRD_YEAR");
+  assert.equal(r.academicStatus, "SEMESTER_5");
 });
 
 test("rejects each invalid field with a field-level error", () => {
@@ -69,7 +74,7 @@ test("rejects each invalid field with a field-level error", () => {
 });
 
 test("academic status is a stage, not a graduation year", () => {
-  for (const s of ["FIRST_YEAR", "SECOND_YEAR", "THIRD_YEAR", "GRADUATE"]) {
+  for (const s of ["SEMESTER_1", "SEMESTER_4", "SEMESTER_8", "GRADUATE"]) {
     assert.equal(registrationFieldsSchema.safeParse({ ...valid, academicStatus: s }).success, true);
   }
   assert.equal(registrationFieldsSchema.safeParse({ ...valid, academicStatus: "2027" }).success, false);
@@ -209,4 +214,65 @@ test("derives the Zoom meeting id and prints id + passcode in the email", () => 
   assert.ok(m.html.includes("812 3456 7890") && m.html.includes("123456"));
   assert.ok(m.html.includes("Medtech 101: Your First Step into the Medtech Industry"));
   assert.ok(m.text.includes("Meeting ID: 812 3456 7890 · Passcode: 123456"));
+});
+
+// ── Festive offer pricing ───────────────────────────────────────────
+
+const FREE_UNTIL = "2026-10-22T23:59:00+05:30";
+
+test("free-offer deadline needs an explicit timezone", () => {
+  assert.equal(parseFreeUntil("2026-10-22T23:59:00"), null);
+  assert.equal(parseFreeUntil("not a date+05:30"), null);
+  assert.equal(parseFreeUntil(FREE_UNTIL)!.toISOString(), "2026-10-22T18:29:00.000Z");
+});
+
+test("one real deadline for everyone: free, then ₹999, then closed at session start", () => {
+  const cfg = readMasterclassConfig({ ...fullEnv, MASTERCLASS_FREE_UNTIL: FREE_UNTIL, RAZORPAY_KEY_ID: "rzp_x", RAZORPAY_KEY_SECRET: "s" });
+  assert.equal(pricingAt(cfg, new Date("2026-10-22T18:28:59Z")).phase, "free");
+  assert.equal(pricingAt(cfg, new Date("2026-10-22T18:28:59Z")).amountPaise, 0);
+  const paid = pricingAt(cfg, new Date("2026-10-22T18:29:00Z"));
+  assert.equal(paid.phase, "paid");
+  assert.equal(paid.amountPaise, 99_900);
+  // Session starts 24 Oct 18:00 IST = 12:30Z.
+  assert.equal(pricingAt(cfg, new Date("2026-10-24T12:29:59Z")).phase, "paid");
+  assert.equal(pricingAt(cfg, new Date("2026-10-24T12:30:00Z")).phase, "closed");
+});
+
+test("without a deadline registration stays free; paid phase requires Razorpay keys", () => {
+  const noDeadline = readMasterclassConfig(fullEnv);
+  assert.equal(pricingAt(noDeadline, new Date("2026-10-23T00:00:00Z")).phase, "free");
+  const noKeys = readMasterclassConfig({ ...fullEnv, MASTERCLASS_FREE_UNTIL: FREE_UNTIL });
+  const r = masterclassReadiness(noKeys);
+  assert.equal(r.open, false);
+  assert.ok(r.missing.some((m) => m.includes("Razorpay")));
+});
+
+test("deadline label is in IST", () => {
+  assert.equal(formatDeadline(new Date(FREE_UNTIL)), "Thu, 22 Oct, 11:59 PM IST");
+});
+
+test("paid confirmation email shows the amount and payment id", () => {
+  const m = masterclassConfirmationEmail({
+    firstName: "Priya",
+    zoomUrl: "https://us06web.zoom.us/j/81234567890?pwd=abc",
+    timeLabel: "6:00 PM IST",
+    payment: { amountPaise: 99_900, paymentId: "pay_TEST123" },
+  });
+  assert.ok(m.html.includes("₹999") && m.html.includes("pay_TEST123"));
+  assert.ok(m.text.includes("Amount paid: ₹999 · Payment ID pay_TEST123"));
+  const free = masterclassConfirmationEmail({ firstName: "P", zoomUrl: "https://zoom.us/j/1", timeLabel: "6:00 PM IST" });
+  assert.ok(!free.html.includes("Amount paid"));
+});
+
+test("academic status is offered as 1st–8th semester plus graduate; old year values are not accepted from the form", () => {
+  const labels = ACADEMIC_STATUS_OPTIONS.map((o) => o.label);
+  assert.deepEqual(labels, [
+    "1st Semester", "2nd Semester", "3rd Semester", "4th Semester",
+    "5th Semester", "6th Semester", "7th Semester", "8th Semester", "Pass-out / Graduate",
+  ]);
+  for (const s of ["FIRST_YEAR", "SEMESTER_9", "SEMESTER_0"]) {
+    assert.equal(registrationFieldsSchema.safeParse({ ...valid, academicStatus: s }).success, false, s);
+  }
+  // Registrations stored before the change still render a label in admin and email.
+  assert.equal(ACADEMIC_STATUS_LABELS.THIRD_YEAR, "Third Year");
 });

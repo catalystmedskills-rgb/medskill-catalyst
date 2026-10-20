@@ -16,7 +16,11 @@ export type MasterclassEmailInput = {
   whatsappUrl?: string | null;
   meetingId?: string | null;
   passcode?: string | null;
+  /** Present only for a verified ₹999 payment. */
+  payment?: { amountPaise: number; paymentId: string } | null;
 };
+
+const rupees = (paise: number) => `₹${(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
 export function escapeHtml(s: string): string {
   return String(s)
@@ -59,7 +63,11 @@ export function masterclassConfirmationEmail(input: MasterclassEmailInput): {
 </td></tr>
 <tr><td style="padding:18px 28px 0 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F7F9FB;border:1px solid #E3EAF0;border-radius:12px;"><tr><td style="padding:20px 22px;">
 <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#00589E;margin-bottom:10px;">Masterclass Details</div>
-<table role="presentation" cellpadding="0" cellspacing="0" border="0">${row("Session", session)}${row("Date", date)}${row("Time", time)}${row("Platform", "Zoom")}</table>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0">${row("Session", session)}${row("Date", date)}${row("Time", time)}${row("Platform", "Zoom")}${
+    input.payment
+      ? row("Amount paid", `${escapeHtml(rupees(input.payment.amountPaise))} &middot; Payment ID ${escapeHtml(input.payment.paymentId)}`)
+      : ""
+  }</table>
 </td></tr></table></td></tr>
 <tr><td align="center" style="padding:26px 28px 6px 28px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" bgcolor="#00589E" style="border-radius:100px;">
 <a href="${zoom}" target="_blank" rel="noopener" style="display:inline-block;padding:15px 34px;font-family:'Plus Jakarta Sans','Segoe UI',Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;border-radius:100px;">Join the Masterclass &rarr;</a>
@@ -91,6 +99,7 @@ ${
     `Date: ${MASTERCLASS_EVENT.dayDateLabel}`,
     `Time: ${input.timeLabel}`,
     "Platform: Zoom",
+    ...(input.payment ? [`Amount paid: ${rupees(input.payment.amountPaise)} · Payment ID ${input.payment.paymentId}`] : []),
     "",
     "Join the Masterclass:",
     input.zoomUrl,

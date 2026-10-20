@@ -159,6 +159,16 @@ export default async function MasterclassAdminPage({
                     {r.email_attempts} attempt{r.email_attempts === 1 ? "" : "s"}
                     {r.email_provider_id ? ` · ${r.email_provider_id.slice(0, 8)}…` : ""}
                   </div>
+                  <div className="mt-1 text-xs font-semibold">
+                    {r.payment_status === "NOT_REQUIRED" && <span className="text-muted">Free registration</span>}
+                    {r.payment_status === "PAID" && (
+                      <span className="text-success" title={r.razorpay_payment_id ?? ""}>
+                        Paid ₹{(r.amount_paise / 100).toLocaleString("en-IN")}
+                      </span>
+                    )}
+                    {r.payment_status === "PENDING" && <span className="text-warning">Payment pending — no Zoom link sent</span>}
+                    {r.payment_status === "FAILED" && <span className="text-danger">Payment failed — no Zoom link sent</span>}
+                  </div>
                   {r.email_last_error && r.email_status !== "SENT" && (
                     <div className="mt-1 max-w-[220px] truncate text-xs text-danger" title={r.email_last_error}>
                       {r.email_last_error}
@@ -166,7 +176,7 @@ export default async function MasterclassAdminPage({
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {r.email_status !== "SENT" && (
+                  {r.email_status !== "SENT" && (r.payment_status === "NOT_REQUIRED" || r.payment_status === "PAID") && (
                     <form action={retryConfirmationAction}>
                       <input type="hidden" name="id" value={r.id} />
                       <button

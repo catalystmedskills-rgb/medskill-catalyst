@@ -17,13 +17,15 @@ export const metadata: Metadata = {
 export default async function MasterclassThankYouPage({
   searchParams,
 }: {
-  searchParams: Promise<{ r?: string; existing?: string }>;
+  searchParams: Promise<{ r?: string; existing?: string; paid?: string }>;
 }) {
-  const { r, existing } = await searchParams;
+  const { r, existing, paid } = await searchParams;
   const summary = typeof r === "string" ? await getRegistrationSummary(r) : null;
   const config = readMasterclassConfig();
   const time = timeLabel(config);
-  const confirmed = Boolean(summary);
+  // Only free registrations and verified payments count as "registered".
+  const confirmed = Boolean(summary && (summary.paymentStatus === "NOT_REQUIRED" || summary.paymentStatus === "PAID"));
+  const awaitingPayment = Boolean(summary && !confirmed);
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas font-body text-ink antialiased">
@@ -77,6 +79,33 @@ export default async function MasterclassThankYouPage({
                 ) : null}
                 . If it isn&rsquo;t in your inbox within a few minutes, check spam or promotions.
               </p>
+            </section>
+          ) : awaitingPayment ? (
+            <section aria-labelledby="ty-title" className="rounded-msc-xl border border-brand-navy/[0.08] bg-surface p-7 text-center shadow-msc-float sm:p-10">
+              <h1 id="ty-title" className="font-display text-3xl font-bold leading-tight text-brand-navy">
+                {paid === "1" ? "Confirming your payment…" : "Your payment isn't complete yet"}
+              </h1>
+              <p className="mt-3 text-base leading-relaxed text-muted">
+                {paid === "1" ? (
+                  <>
+                    Thanks, {summary!.firstName}. Razorpay has your payment and we&rsquo;re confirming it now. Your Zoom
+                    joining details will arrive by email as soon as it&rsquo;s confirmed — usually within a few minutes.
+                  </>
+                ) : (
+                  <>
+                    Your details are saved, {summary!.firstName}, but we haven&rsquo;t received the{" "}
+                    {MASTERCLASS_EVENT.priceLabel} registration fee. Your seat is confirmed once the payment goes through.
+                  </>
+                )}
+              </p>
+              {paid !== "1" && (
+                <a
+                  href={`${MASTERCLASS_EVENT.path}#register`}
+                  className="mt-6 inline-flex h-12 items-center justify-center rounded-pill bg-brand-blue px-7 text-sm font-bold text-white shadow-msc-glow"
+                >
+                  Complete payment
+                </a>
+              )}
             </section>
           ) : (
             <section aria-labelledby="ty-title" className="rounded-msc-xl border border-brand-navy/[0.08] bg-surface p-7 text-center shadow-msc-float sm:p-10">

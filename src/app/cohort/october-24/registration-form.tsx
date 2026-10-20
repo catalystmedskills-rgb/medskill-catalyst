@@ -12,6 +12,7 @@ import {
   type RegistrationFields,
 } from "@/src/modules/masterclass/schema";
 import { MASTERCLASS_EVENT, PRIVACY_POLICY_PATH } from "@/src/modules/masterclass/event";
+import { PricingBanner, loadRazorpay, openCheckout, useOfferPhase, type PricingProps } from "./pricing";
 import {
   captureAttribution,
   campaignProps,
@@ -43,8 +44,29 @@ function FieldError({ id, message }: { id: string; message?: string }) {
   );
 }
 
-export function RegistrationForm({ registrationOpen }: { registrationOpen: boolean }) {
+type RegisterResponse = {
+  ok?: boolean;
+  registrationId?: string | null;
+  duplicate?: boolean;
+  requiresPayment?: boolean;
+  order?: { id: string; amount: number; currency: string; keyId: string };
+  prefill?: { name: string; email: string; contact: string };
+  error?: string;
+  fieldErrors?: Partial<Record<string, string[]>>;
+};
+
+export function RegistrationForm({
+  registrationOpen,
+  pricing,
+  closed = false,
+}: {
+  registrationOpen: boolean;
+  pricing: PricingProps;
+  /** The session has started; registration is over for good. */
+  closed?: boolean;
+}) {
   const router = useRouter();
+  const { phase, msLeft } = useOfferPhase(pricing);
   const mountedAt = useRef(Date.now());
   const inFlight = useRef(false);
   const started = useRef(false);
@@ -104,13 +126,16 @@ export function RegistrationForm({ registrationOpen }: { registrationOpen: boole
           fbEventId,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        registrationId?: string | null;
-        duplicate?: boolean;
-        error?: string;
-        fieldErrors?: Partial<Record<string, string[]>>;
-      };
+      const data = (await res.json().catch(() => ({}))) as RegisterResponse;
+
+      if (res.ok && data.ok && data.requiresPayment && data.order && data.registrationId) {
+        // The server decided this registration costs ₹999 (the free offer has
+        // ended). Details are already saved; collect the payment.
+        if (await payForRegistration(data.registrationId, data.order, data.prefill!, fbEventId)) return;
+        inFlight.current = false;
+        setSubmitting(false);
+        return;
+      }
 
       if (res.ok && data.ok) {
         if (!data.duplicate && data.registrationId) {
@@ -150,6 +175,55 @@ export function RegistrationForm({ registrationOpen }: { registrationOpen: boole
     setSubmitting(false);
   }
 
+  /** Returns true when payment succeeded and the page is navigating away. */
+  async function payForRegistration(
+    registrationId: string,
+    order: NonNullable<RegisterResponse["order"]>,
+    prefill: NonNullable<RegisterResponse["prefill"]>,
+    fbEventId: string,
+  ): Promise<boolean> {
+    trackMasterclass("masterclass_checkout_started", campaignProps(attribution.current));
+    fbTrack("InitiateCheckout", { value: order.amount / 100, currency: "INR", content_name: MASTERCLASS_EVENT.title });
+    try {
+      await loadRazorpay();
+    } catch {
+      setServerError("Your details are saved, but the payment window couldn't load. Check your connection and press the button again.");
+      return false;
+    }
+    const result = await openCheckout({ keyId: order.keyId, orderId: order.id, amount: order.amount, prefill });
+    if (result.status !== "paid") {
+      trackMasterclass("masterclass_payment_incomplete", { reason: result.status });
+      setServerError(
+        result.status === "failed"
+          ? `Payment didn't go through (${result.reason}). Your details are saved — press the button to try again.`
+          : "Payment not completed. Your details are saved — press the button whenever you're ready to pay.",
+      );
+      return false;
+    }
+    try {
+      const res = await fetch("/api/masterclass/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ registrationId, ...result.response, fbEventId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
+        setServerError(
+          `${data.error ?? "We couldn't confirm your payment."} If money was deducted, it's safe — write to info@medskillscatalyst.com with payment ID ${result.response.razorpay_payment_id}.`,
+        );
+        return false;
+      }
+    } catch {
+      // The webhook still records the payment; send the student on with a note.
+      router.push(`${MASTERCLASS_EVENT.thankYouPath}?r=${registrationId}&paid=1`);
+      return true;
+    }
+    trackMasterclass("masterclass_payment_success", campaignProps(attribution.current));
+    fbTrack("Purchase", { value: order.amount / 100, currency: "INR", content_name: MASTERCLASS_EVENT.title }, fbEventId);
+    router.push(`${MASTERCLASS_EVENT.thankYouPath}?r=${registrationId}&paid=1`);
+    return true;
+  }
+
   function onInvalid() {
     trackMasterclass("masterclass_registration_error", { status: "client_validation" });
   }
@@ -165,10 +239,22 @@ export function RegistrationForm({ registrationOpen }: { registrationOpen: boole
       aria-describedby={serverError ? "mc-form-error" : undefined}
       className="space-y-4"
     >
+      {registrationOpen && (
+        <PricingBanner {...pricing} phase={phase} msLeft={msLeft} />
+      )}
+
       {!registrationOpen && (
         <div role="status" className="rounded-msc-md border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-ink">
-          <strong className="font-semibold">Registration opens shortly.</strong> We&rsquo;re finalising the session
-          details — please check back soon.
+          {closed ? (
+            <>
+              <strong className="font-semibold">Registration has closed.</strong> The masterclass has already started.
+            </>
+          ) : (
+            <>
+              <strong className="font-semibold">Registration opens shortly.</strong> We&rsquo;re finalising the session
+              details — please check back soon.
+            </>
+          )}
         </div>
       )}
 
@@ -360,17 +446,31 @@ export function RegistrationForm({ registrationOpen }: { registrationOpen: boole
               <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity=".3" strokeWidth="3" />
               <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
             </svg>
-            Registering…
+            {phase === "paid" ? "Please wait…" : "Registering…"}
+          </>
+        ) : phase === "paid" ? (
+          <>
+            Register &amp; pay {MASTERCLASS_EVENT.priceLabel}
+            <span aria-hidden>→</span>
           </>
         ) : (
           <>
-            Register for the Masterclass
+            Register free
             <span aria-hidden>→</span>
           </>
         )}
       </button>
       <p className="text-center text-xs text-muted">
-        Takes under a minute · Your Zoom link arrives by email
+        {phase === "paid" ? (
+          <>
+            Secure payment by Razorpay · Zoom link emailed after payment ·{" "}
+            <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+              Refund policy
+            </a>
+          </>
+        ) : (
+          "Takes under a minute · Your Zoom link arrives by email"
+        )}
       </p>
     </form>
   );

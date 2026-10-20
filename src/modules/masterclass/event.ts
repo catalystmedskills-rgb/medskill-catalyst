@@ -18,6 +18,9 @@ export const MASTERCLASS_EVENT = {
   platform: "Zoom",
   path: "/cohort/october-24",
   thankYouPath: "/cohort/october-24/thank-you",
+  /** Regular price once the festive free offer ends. */
+  pricePaise: 99_900,
+  priceLabel: "₹999",
   /** Bump whenever the consent sentence on the form changes. */
   consentTextVersion: "masterclass-2026-10-24-v1",
 } as const;

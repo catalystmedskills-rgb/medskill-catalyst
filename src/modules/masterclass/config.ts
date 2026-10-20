@@ -11,12 +11,17 @@
  *   MASTERCLASS_DURATION_MINUTES        optional, e.g. "90"
  *   MASTERCLASS_ZOOM_PASSCODE           optional; printed in the email as a fallback
  *   MASTERCLASS_WHATSAPP_COMMUNITY_URL  https://chat.whatsapp.com/…
+ *   MASTERCLASS_FREE_UNTIL              ISO time with offset; free before it,
+ *                                       ₹999 via Razorpay after it. Unset = free.
+ *   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET  existing Razorpay integration
  *   RESEND_API_KEY                      existing Resend integration
  *
  * Registrations stay closed until the flag is on AND the Zoom link, start time
  * and Resend key are all valid, so a half-configured deploy can never collect
  * students it cannot email.
  */
+
+import { MASTERCLASS_EVENT } from "./event";
 
 type Env = Record<string, string | undefined>;
 
@@ -30,6 +35,9 @@ export type MasterclassConfig = {
   whatsappUrl: string | null;
   flagOn: boolean;
   resendConfigured: boolean;
+  /** End of the festive free-registration offer; null = always free. */
+  freeUntil: Date | null;
+  razorpayConfigured: boolean;
 };
 
 export type MasterclassReadiness = {
@@ -109,7 +117,57 @@ export function readMasterclassConfig(env: Env = process.env): MasterclassConfig
     whatsappUrl: parseWhatsappUrl(env.MASTERCLASS_WHATSAPP_COMMUNITY_URL),
     flagOn: (env.MASTERCLASS_REGISTRATION_OPEN ?? "").trim().toLowerCase() === "true",
     resendConfigured: Boolean(clean(env.RESEND_API_KEY) || clean(env.Resend_Api_key)),
+    freeUntil: parseFreeUntil(env.MASTERCLASS_FREE_UNTIL),
+    razorpayConfigured: Boolean(clean(env.RAZORPAY_KEY_ID) && clean(env.RAZORPAY_KEY_SECRET)),
   };
+}
+
+/**
+ * The free-offer deadline. Must carry an explicit offset (or Z) so a server in
+ * UTC and a reader in IST agree on the same instant.
+ */
+export function parseFreeUntil(v: string | undefined): Date | null {
+  const t = clean(v);
+  if (!t || !/(Z|[+-]\d{2}:\d{2})$/.test(t)) return null;
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** The session's start as an instant, from the fixed date and the IST start time. */
+export function masterclassStartsAt(cfg: Pick<MasterclassConfig, "startTime">): Date | null {
+  return cfg.startTime ? new Date(`${MASTERCLASS_EVENT.dateISO}T${cfg.startTime}:00+05:30`) : null;
+}
+
+export type PricingPhase = {
+  /** free: festive offer running · paid: ₹999 · closed: the session has started. */
+  phase: "free" | "paid" | "closed";
+  amountPaise: number;
+  freeUntil: Date | null;
+};
+
+/**
+ * What a registration costs right now. One real deadline for everyone — never
+ * a per-visitor timer — so the countdown on the page is always the truth.
+ */
+export function pricingAt(cfg: MasterclassConfig, now: Date = new Date()): PricingPhase {
+  const startsAt = masterclassStartsAt(cfg);
+  if (startsAt && now >= startsAt) return { phase: "closed", amountPaise: 0, freeUntil: cfg.freeUntil };
+  if (!cfg.freeUntil || now < cfg.freeUntil) return { phase: "free", amountPaise: 0, freeUntil: cfg.freeUntil };
+  return { phase: "paid", amountPaise: MASTERCLASS_EVENT.pricePaise, freeUntil: cfg.freeUntil };
+}
+
+/** "Thu, 22 Oct, 11:59 PM IST" */
+export function formatDeadline(d: Date): string {
+  const parts = new Intl.DateTimeFormat("en-IN", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
+  }).format(d);
+  return `${parts.replace(/\b(am|pm)\b/, (s) => s.toUpperCase())} IST`;
 }
 
 export function masterclassReadiness(cfg: MasterclassConfig): MasterclassReadiness {
@@ -118,6 +176,9 @@ export function masterclassReadiness(cfg: MasterclassConfig): MasterclassReadine
   if (!cfg.zoomUrl) missing.push("MASTERCLASS_ZOOM_JOIN_URL is missing or not a Zoom https link");
   if (!cfg.startTime) missing.push("MASTERCLASS_START_TIME_IST is missing or not HH:mm");
   if (!cfg.resendConfigured) missing.push("RESEND_API_KEY is missing");
+  if (cfg.freeUntil && !cfg.razorpayConfigured) {
+    missing.push("MASTERCLASS_FREE_UNTIL is set but Razorpay keys are missing, so paid registration can't work");
+  }
   return { open: missing.length === 0, missing };
 }
 

@@ -841,10 +841,19 @@ model CredentialBulkRow {
 
 /// Where the student is in their studies — NOT a calendar graduation year.
 enum MasterclassAcademicStatus {
+  // Year-based values from the first release; kept for registrations already stored.
   FIRST_YEAR
   SECOND_YEAR
   THIRD_YEAR
   GRADUATE
+  SEMESTER_1
+  SEMESTER_2
+  SEMESTER_3
+  SEMESTER_4
+  SEMESTER_5
+  SEMESTER_6
+  SEMESTER_7
+  SEMESTER_8
 }
 
 /// Lifecycle of the Zoom confirmation email. SENT means Resend accepted the
@@ -853,6 +862,15 @@ enum MasterclassEmailStatus {
   PENDING
   SENDING
   SENT
+  FAILED
+}
+
+/// NOT_REQUIRED: registered during the free offer. PENDING: a ₹999 order exists
+/// but no captured payment yet. PAID only after a verified Razorpay capture.
+enum MasterclassPaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  PAID
   FAILED
 }
 
@@ -891,6 +909,12 @@ model MasterclassRegistration {
   email_next_attempt_at DateTime?                @db.Timestamptz(6)
   /// Set when a worker claims the row (SENDING); a stale claim is reclaimable.
   email_claimed_at     DateTime?                 @db.Timestamptz(6)
+
+  amount_paise         Int                       @default(0)
+  payment_status       MasterclassPaymentStatus  @default(NOT_REQUIRED)
+  razorpay_order_id    String?                   @unique
+  razorpay_payment_id  String?                   @unique
+  paid_at              DateTime?                 @db.Timestamptz(6)
 
   created_at           DateTime                  @default(now()) @db.Timestamptz(6)
   updated_at           DateTime                  @updatedAt @db.Timestamptz(6)

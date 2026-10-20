@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/src/lib/db";
 import { verifyWebhookSignature } from "@/src/lib/razorpay";
 import { settleCapturedPayment, markPaymentFailed } from "@/src/modules/enroll/service";
+import {
+  deliverConfirmation,
+  markMasterclassPaymentFailed,
+  settleMasterclassPayment,
+} from "@/src/modules/masterclass/service";
 
 export const runtime = "nodejs";
 // The raw request body is required for signature verification — do not let a
@@ -93,6 +98,19 @@ export async function POST(req: Request) {
     const payment = event.payload?.payment?.entity;
 
     if ((type === "payment.captured" || type === "order.paid") && payment?.order_id && payment.id) {
+      // Masterclass orders are settled by their own module; everything else is
+      // an enrollment payment and continues below unchanged.
+      const masterclass = await settleMasterclassPayment({ orderId: payment.order_id, paymentId: payment.id });
+      if (masterclass) {
+        // The payment is recorded. If the email fails here the retry sweep and
+        // cron resend it, so the webhook itself does not need redelivery.
+        await deliverConfirmation(masterclass.id).catch((err) =>
+          console.error("[rzp webhook] masterclass email failed, sweep will retry", masterclass.id, err),
+        );
+        await markProcessed();
+        return NextResponse.json({ ok: true });
+      }
+
       const result = await settleCapturedPayment({
         orderId: payment.order_id,
         paymentId: payment.id,
@@ -115,7 +133,9 @@ export async function POST(req: Request) {
     }
 
     if (type === "payment.failed" && payment?.order_id) {
-      await markPaymentFailed(payment.order_id, payment.status);
+      if (!(await markMasterclassPaymentFailed(payment.order_id))) {
+        await markPaymentFailed(payment.order_id, payment.status);
+      }
     }
 
     // Unhandled or terminal event — acknowledge so it isn't retried.

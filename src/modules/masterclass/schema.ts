@@ -8,19 +8,36 @@ import { z } from "zod";
  * can never disagree. Only the server result is trusted.
  */
 
-export const ACADEMIC_STATUSES = ["FIRST_YEAR", "SECOND_YEAR", "THIRD_YEAR", "GRADUATE"] as const;
+/** What the form offers today: the student's current semester, or graduated. */
+export const ACADEMIC_STATUSES = [
+  "SEMESTER_1",
+  "SEMESTER_2",
+  "SEMESTER_3",
+  "SEMESTER_4",
+  "SEMESTER_5",
+  "SEMESTER_6",
+  "SEMESTER_7",
+  "SEMESTER_8",
+  "GRADUATE",
+] as const;
 export type AcademicStatusValue = (typeof ACADEMIC_STATUSES)[number];
 
+/** Year-based values from the first release. Still stored on early registrations; no longer offered. */
+export type LegacyAcademicStatus = "FIRST_YEAR" | "SECOND_YEAR" | "THIRD_YEAR";
+
+const ORDINAL = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th"];
+
 export const ACADEMIC_STATUS_OPTIONS: { value: AcademicStatusValue; label: string }[] = [
-  { value: "FIRST_YEAR", label: "First Year" },
-  { value: "SECOND_YEAR", label: "Second Year" },
-  { value: "THIRD_YEAR", label: "Third Year" },
+  ...ORDINAL.map((o, i) => ({ value: `SEMESTER_${i + 1}` as AcademicStatusValue, label: `${o} Semester` })),
   { value: "GRADUATE", label: "Pass-out / Graduate" },
 ];
 
-export const ACADEMIC_STATUS_LABELS: Record<AcademicStatusValue, string> = Object.fromEntries(
-  ACADEMIC_STATUS_OPTIONS.map((o) => [o.value, o.label]),
-) as Record<AcademicStatusValue, string>;
+export const ACADEMIC_STATUS_LABELS: Record<AcademicStatusValue | LegacyAcademicStatus, string> = {
+  ...(Object.fromEntries(ACADEMIC_STATUS_OPTIONS.map((o) => [o.value, o.label])) as Record<AcademicStatusValue, string>),
+  FIRST_YEAR: "First Year",
+  SECOND_YEAR: "Second Year",
+  THIRD_YEAR: "Third Year",
+};
 
 const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 

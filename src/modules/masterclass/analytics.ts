@@ -16,7 +16,10 @@ export type MasterclassEvent =
   | "masterclass_registration_success"
   | "masterclass_registration_error"
   | "masterclass_thank_you_view"
-  | "masterclass_whatsapp_click";
+  | "masterclass_whatsapp_click"
+  | "masterclass_checkout_started"
+  | "masterclass_payment_incomplete"
+  | "masterclass_payment_success";
 
 const SURFACE = "masterclass_oct24";
 

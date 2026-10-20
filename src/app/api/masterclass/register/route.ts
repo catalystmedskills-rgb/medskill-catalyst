@@ -3,12 +3,13 @@ import { z } from "zod";
 import { clientKey, consumeRequestAllowance } from "@/src/lib/rate-limit";
 import { sendMetaEvent, metaContextFromRequest } from "@/src/lib/meta-capi";
 import { registrationRequestSchema } from "@/src/modules/masterclass/schema";
-import { readMasterclassConfig, masterclassReadiness } from "@/src/modules/masterclass/config";
+import { readMasterclassConfig, masterclassReadiness, pricingAt } from "@/src/modules/masterclass/config";
 import { MASTERCLASS_EVENT } from "@/src/modules/masterclass/event";
 import {
   registerForMasterclass,
   deliverConfirmation,
   processDueConfirmations,
+  createMasterclassOrder,
 } from "@/src/modules/masterclass/service";
 
 export const runtime = "nodejs";
@@ -49,6 +50,12 @@ export async function POST(req: Request) {
     return json({ error: "Registrations for this masterclass are not open yet. Please check back soon." }, 503);
   }
 
+  // Price is decided here, on the server clock, never by the page's countdown.
+  const pricing = pricingAt(config);
+  if (pricing.phase === "closed") {
+    return json({ error: "Registration has closed — the masterclass has already started." }, 410);
+  }
+
   const verdict = await consumeRequestAllowance(clientKey(req.headers, "masterclass-register"), RATE_LIMIT);
   if (verdict.blocked) {
     return json(
@@ -83,13 +90,35 @@ export async function POST(req: Request) {
 
   let outcome;
   try {
-    outcome = await registerForMasterclass(input);
+    outcome = await registerForMasterclass(input, pricing);
   } catch (err) {
     console.error("[masterclass] registration save failed:", err);
     return json(
       { error: "We couldn't save your registration just now. Please try again in a moment." },
       500,
     );
+  }
+
+  // Saved but unpaid: hand back a Razorpay order. The Zoom email waits for a
+  // verified payment (see /api/masterclass/verify and the Razorpay webhook).
+  if (outcome.paymentStatus === "PENDING" || outcome.paymentStatus === "FAILED") {
+    try {
+      const order = await createMasterclassOrder(outcome.id);
+      return json({
+        ok: true,
+        requiresPayment: true,
+        registrationId: outcome.id,
+        duplicate: outcome.kind === "duplicate",
+        order: { id: order.orderId, amount: order.amountPaise, currency: "INR", keyId: order.keyId },
+        prefill: { name: input.fullName, email: input.email, contact: input.phone },
+      });
+    } catch (err) {
+      console.error("[masterclass] order creation failed for", outcome.id, err);
+      return json(
+        { error: "Your details are saved, but we couldn't start the payment. Please try again in a moment." },
+        502,
+      );
+    }
   }
 
   // The registration is saved; from here on nothing can turn it into a failure.

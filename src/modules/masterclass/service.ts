@@ -1,15 +1,17 @@
 import "server-only";
 import { db } from "@/src/lib/db";
 import { sendEmail } from "@/src/lib/email";
+import { createRazorpayOrder, publicKeyId } from "@/src/lib/razorpay";
 import { Prisma } from "@/src/generated/prisma/client";
 import {
   ActivityType,
   CommChannel,
   CommStatus,
   MasterclassEmailStatus,
+  MasterclassPaymentStatus,
 } from "@/src/generated/prisma/enums";
 import { MASTERCLASS_EVENT } from "./event";
-import { readMasterclassConfig, timeLabel, type MasterclassConfig } from "./config";
+import { readMasterclassConfig, timeLabel, type MasterclassConfig, type PricingPhase } from "./config";
 import { masterclassConfirmationEmail } from "./email-template";
 import { isPermanentEmailFailure, MAX_EMAIL_ATTEMPTS, nextAttemptAt, STALE_CLAIM_MS } from "./delivery";
 import { leadSourceFor } from "./attribution";
@@ -26,9 +28,14 @@ import { ACADEMIC_STATUS_LABELS, firstNameOf, type RegistrationRequest } from ".
  *      without ever sending twice; Resend's Idempotency-Key covers the one gap
  *      a claim cannot (a timeout after Resend already accepted the message).
  *   4. SENT is recorded only when Resend returned a message id.
+ *   5. After the free offer ends a registration is saved as payment PENDING and
+ *      the Zoom email is held back until a verified Razorpay capture marks it
+ *      PAID — by the browser callback or the webhook, whichever comes first.
  */
 
 export type EmailStatus = `${MasterclassEmailStatus}`;
+
+export type PaymentStatus = `${MasterclassPaymentStatus}`;
 
 export type RegisterOutcome = {
   kind: "created" | "duplicate";
@@ -36,7 +43,36 @@ export type RegisterOutcome = {
   firstName: string;
   email: string;
   emailStatus: EmailStatus;
+  paymentStatus: PaymentStatus;
+  amountPaise: number;
 };
+
+/** Registrations that are allowed to receive the Zoom link. */
+const ENTITLED = [MasterclassPaymentStatus.NOT_REQUIRED, MasterclassPaymentStatus.PAID];
+
+const OUTCOME_SELECT = {
+  id: true,
+  full_name: true,
+  email: true,
+  email_status: true,
+  payment_status: true,
+  amount_paise: true,
+} as const;
+
+function outcome(
+  kind: RegisterOutcome["kind"],
+  r: { id: string; full_name: string; email: string; email_status: EmailStatus; payment_status: PaymentStatus; amount_paise: number },
+): RegisterOutcome {
+  return {
+    kind,
+    id: r.id,
+    firstName: firstNameOf(r.full_name),
+    email: r.email,
+    emailStatus: r.email_status,
+    paymentStatus: r.payment_status,
+    amountPaise: r.amount_paise,
+  };
+}
 
 const EVENT_KEY = MASTERCLASS_EVENT.key;
 const EMAIL_TEMPLATE_KEY = "masterclass_confirmation";
@@ -49,25 +85,22 @@ async function findExisting(email: string, phone: string) {
   return db.masterclassRegistration.findFirst({
     where: { event_key: EVENT_KEY, OR: [{ email }, { phone }] },
     orderBy: { created_at: "asc" },
-    select: { id: true, full_name: true, email: true, email_status: true },
+    select: OUTCOME_SELECT,
   });
 }
 
 /**
  * Save a registration. Idempotent per student: a second submission with the
- * same email OR phone returns the original registration unchanged.
+ * same email OR phone returns the original registration unchanged — including
+ * its price, so someone who registered free is never asked to pay later.
  */
-export async function registerForMasterclass(input: RegistrationRequest): Promise<RegisterOutcome> {
+export async function registerForMasterclass(
+  input: RegistrationRequest,
+  pricing: PricingPhase,
+): Promise<RegisterOutcome> {
   const existing = await findExisting(input.email, input.phone);
-  if (existing) {
-    return {
-      kind: "duplicate",
-      id: existing.id,
-      firstName: firstNameOf(existing.full_name),
-      email: existing.email,
-      emailStatus: existing.email_status,
-    };
-  }
+  if (existing) return outcome("duplicate", existing);
+  const paid = pricing.phase === "paid";
 
   const a = input.attribution ?? {};
   let created;
@@ -92,22 +125,16 @@ export async function registerForMasterclass(input: RegistrationRequest): Promis
         fbclid: a.fbclid || null,
         referrer: a.referrer || null,
         landing_page: a.landing_page || MASTERCLASS_EVENT.path,
+        amount_paise: paid ? pricing.amountPaise : 0,
+        payment_status: paid ? MasterclassPaymentStatus.PENDING : MasterclassPaymentStatus.NOT_REQUIRED,
       },
-      select: { id: true, full_name: true, email: true, email_status: true },
+      select: OUTCOME_SELECT,
     });
   } catch (err) {
     // Two submissions raced past findExisting; the loser reports the winner.
     if (isUniqueViolation(err)) {
       const winner = await findExisting(input.email, input.phone);
-      if (winner) {
-        return {
-          kind: "duplicate",
-          id: winner.id,
-          firstName: firstNameOf(winner.full_name),
-          email: winner.email,
-          emailStatus: winner.email_status,
-        };
-      }
+      if (winner) return outcome("duplicate", winner);
     }
     throw err;
   }
@@ -116,13 +143,75 @@ export async function registerForMasterclass(input: RegistrationRequest): Promis
     console.error("[masterclass] lead link failed for registration", created.id, err);
   });
 
-  return {
-    kind: "created",
-    id: created.id,
-    firstName: firstNameOf(created.full_name),
-    email: created.email,
-    emailStatus: created.email_status,
-  };
+  return outcome("created", created);
+}
+
+// ── Payment (₹999 after the free offer) ──────────────────────────────
+
+export class MasterclassPaymentError extends Error {}
+
+/**
+ * Create a Razorpay order for an unpaid registration. The amount comes from the
+ * row, never the browser. A fresh order each time is fine: Razorpay orders are
+ * free to create, and only the latest one is linked to the registration.
+ */
+export async function createMasterclassOrder(id: string): Promise<{
+  orderId: string;
+  amountPaise: number;
+  keyId: string;
+}> {
+  const reg = await db.masterclassRegistration.findUnique({
+    where: { id },
+    select: { amount_paise: true, payment_status: true },
+  });
+  if (!reg) throw new MasterclassPaymentError("Registration not found.");
+  if (reg.payment_status !== MasterclassPaymentStatus.PENDING && reg.payment_status !== MasterclassPaymentStatus.FAILED) {
+    throw new MasterclassPaymentError("This registration does not need a payment.");
+  }
+  const order = await createRazorpayOrder({
+    amountPaise: reg.amount_paise,
+    receipt: `mc_${id}`,
+    notes: { kind: "masterclass", registration_id: id, event: EVENT_KEY },
+  });
+  await db.masterclassRegistration.update({
+    where: { id },
+    data: { razorpay_order_id: order.id, payment_status: MasterclassPaymentStatus.PENDING },
+  });
+  return { orderId: order.id, amountPaise: reg.amount_paise, keyId: publicKeyId() };
+}
+
+/**
+ * Record a verified capture. Idempotent: the browser callback and the webhook
+ * may both arrive, in either order. Returns the registration id, or null when
+ * the order is not a masterclass order (so the caller can try other handlers).
+ */
+export async function settleMasterclassPayment(input: {
+  orderId: string;
+  paymentId: string;
+}): Promise<{ id: string; newlyPaid: boolean } | null> {
+  const reg = await db.masterclassRegistration.findUnique({
+    where: { razorpay_order_id: input.orderId },
+    select: { id: true, payment_status: true },
+  });
+  if (!reg) return null;
+  const res = await db.masterclassRegistration.updateMany({
+    where: { id: reg.id, payment_status: { not: MasterclassPaymentStatus.PAID } },
+    data: {
+      payment_status: MasterclassPaymentStatus.PAID,
+      razorpay_payment_id: input.paymentId,
+      paid_at: new Date(),
+    },
+  });
+  return { id: reg.id, newlyPaid: res.count === 1 };
+}
+
+/** A failed attempt; the student can retry, so this never blocks a later capture. */
+export async function markMasterclassPaymentFailed(orderId: string): Promise<boolean> {
+  const res = await db.masterclassRegistration.updateMany({
+    where: { razorpay_order_id: orderId, payment_status: MasterclassPaymentStatus.PENDING },
+    data: { payment_status: MasterclassPaymentStatus.FAILED },
+  });
+  return res.count > 0;
 }
 
 /**
@@ -237,6 +326,8 @@ async function claim(id: string, force: boolean): Promise<boolean> {
   const res = await db.masterclassRegistration.updateMany({
     where: {
       id,
+      // The Zoom link goes only to free registrations and verified payments.
+      payment_status: { in: ENTITLED },
       OR: [
         retryable,
         { email_status: MasterclassEmailStatus.SENDING, email_claimed_at: { lt: staleBefore } },
@@ -300,7 +391,14 @@ export async function deliverConfirmation(
 
   const reg = await db.masterclassRegistration.findUniqueOrThrow({
     where: { id },
-    select: { full_name: true, email: true, email_attempts: true },
+    select: {
+      full_name: true,
+      email: true,
+      email_attempts: true,
+      payment_status: true,
+      amount_paise: true,
+      razorpay_payment_id: true,
+    },
   });
 
   const message = masterclassConfirmationEmail({
@@ -310,6 +408,10 @@ export async function deliverConfirmation(
     whatsappUrl: cfg.whatsappUrl,
     meetingId: cfg.zoomMeetingId,
     passcode: cfg.zoomPasscode,
+    payment:
+      reg.payment_status === MasterclassPaymentStatus.PAID && reg.razorpay_payment_id
+        ? { amountPaise: reg.amount_paise, paymentId: reg.razorpay_payment_id }
+        : null,
   });
 
   const result = await sendEmail({
@@ -364,6 +466,7 @@ export async function processDueConfirmations(limit = 20): Promise<{ attempted: 
   const due = await db.masterclassRegistration.findMany({
     where: {
       event_key: EVENT_KEY,
+      payment_status: { in: ENTITLED },
       OR: [
         {
           email_status: { in: [MasterclassEmailStatus.PENDING, MasterclassEmailStatus.FAILED] },
@@ -393,9 +496,9 @@ export async function getRegistrationSummary(id: string) {
   try {
     const r = await db.masterclassRegistration.findFirst({
       where: { id, event_key: EVENT_KEY },
-      select: { full_name: true, email: true },
+      select: { full_name: true, email: true, payment_status: true },
     });
-    return r ? { firstName: firstNameOf(r.full_name), email: r.email } : null;
+    return r ? { firstName: firstNameOf(r.full_name), email: r.email, paymentStatus: r.payment_status as PaymentStatus } : null;
   } catch (err) {
     console.error("[masterclass] summary lookup failed:", err);
     return null;

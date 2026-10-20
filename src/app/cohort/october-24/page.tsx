@@ -2,13 +2,19 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Image from "next/image";
 import { MASTERCLASS_EVENT, PRIVACY_POLICY_PATH, SITE_URL, SUPPORT_EMAIL } from "@/src/modules/masterclass/event";
-import { masterclassReadiness, readMasterclassConfig, timeLabel } from "@/src/modules/masterclass/config";
+import {
+  formatDeadline,
+  masterclassReadiness,
+  pricingAt,
+  readMasterclassConfig,
+  timeLabel,
+} from "@/src/modules/masterclass/config";
 import { RegistrationForm } from "./registration-form";
 import { LandingViewTracker, RegisterCta, StickyRegisterBar } from "./client-bits";
 
 export const dynamic = "force-dynamic";
 
-const TITLE = "Medtech 101 Masterclass — 24 October 2026 | MedSkills Catalyst";
+const TITLE = "Do You Know? Medtech 101 Masterclass — 24 October 2026 | MedSkills Catalyst";
 const DESCRIPTION =
   "A live Zoom masterclass for life-science, biotech and pharmacy students and graduates: how the medical-device industry works, the roles your degree can lead to, and how to start preparing.";
 
@@ -114,26 +120,31 @@ const Icon = {
   ),
 };
 
+// The six "Do you know?" questions the session answers (owner-supplied, verbatim).
 const LEARN = [
   {
-    title: "The MedTech map",
-    body: "How the medical-device world is organised — diagnostic, therapeutic, surgical, implantable and monitoring devices — and what Class A–D risk levels mean.",
+    title: "You could be sitting on a goldmine of opportunities in MedTech!",
+    body: "Discover a side of healthcare most graduates never hear about in college — and where someone with your background fits in.",
   },
   {
-    title: "Where the opportunities sit",
-    body: "Who makes and sells devices in India: global MNCs, domestic manufacturers and distributors, and why Make in India and PLI schemes matter to your career.",
+    title: "Do you know how many career paths exist beyond Pharma sales?",
+    body: "We'll walk you through the career functions in MedTech — clinical, commercial, product and more — and what each one involves.",
   },
   {
-    title: "Roles your degree can lead to",
-    body: "Clinical, commercial and product paths across specialties like cardiology, orthopaedics, neuro and critical care — and how life-science graduates move into them.",
+    title: "Do you know that medical devices and pharmaceuticals follow different business models?",
+    body: "See how the device industry works differently from pharma, and why that knowledge gap holds so many candidates back.",
   },
   {
-    title: "What hiring managers look for",
-    body: "The clinical vocabulary, commercial thinking and communication skills MedTech recruiters expect — and how to start building them while you study.",
+    title: "Do you know what MedTech hiring managers look for beyond your degree?",
+    body: "The industry-relevant skills recruiters expect, and how to start building them now.",
   },
   {
-    title: "A clear next step",
-    body: "How to go from curiosity to a plan, including what structured, mentor-led preparation for a MedTech career looks like.",
+    title: "Do you know why good Pharma professionals sometimes struggle to transition into MedTech?",
+    body: "Why understanding the MedTech ecosystem matters as much as experience — and how to close that gap.",
+  },
+  {
+    title: "Do you know how to take your first step into MedTech?",
+    body: "Leave with a clear next step, including what our upcoming 6-week cohort offers if you want structured preparation.",
   },
 ];
 
@@ -199,7 +210,14 @@ function initials(name: string) {
 
 export default async function MasterclassLandingPage() {
   const config = readMasterclassConfig();
-  const { open } = masterclassReadiness(config);
+  const pricingNow = pricingAt(config);
+  // Registration also closes once the session has started.
+  const open = masterclassReadiness(config).open && pricingNow.phase !== "closed";
+  const pricing = {
+    initialPhase: pricingNow.phase === "paid" ? ("paid" as const) : ("free" as const),
+    freeUntilISO: config.freeUntil?.toISOString() ?? null,
+    freeUntilLabel: config.freeUntil ? formatDeadline(config.freeUntil) : null,
+  };
   const time = timeLabel(config);
   const { mentors, storyCards, nextCohort } = await loadContent();
   const lead = mentors[0];
@@ -288,16 +306,25 @@ export default async function MasterclassLandingPage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-brand-blue" aria-hidden />
                 Live Masterclass · {MASTERCLASS_EVENT.dateLabel}
               </p>
-              <p className="mt-4 text-sm font-bold uppercase tracking-[0.08em] text-brand-navy/70">
-                {MASTERCLASS_EVENT.sessionTitle}
+              <p className="mt-5 text-xs font-bold uppercase tracking-[0.14em] text-brand-navy/60">
+                MedSkills Catalyst presents
               </p>
-              <h1 className="mt-2 font-display text-[2.1rem] font-bold leading-[1.08] tracking-tight text-brand-navy sm:text-5xl lg:text-[3.4rem]">
-                Your life-science degree can take you into <span className="text-brand-blue">MedTech</span>.
+              <p className="mt-1 font-display text-3xl font-bold uppercase tracking-tight text-brand-blue sm:text-4xl">
+                Do you know?
+              </p>
+              <div aria-hidden className="mt-4 h-px max-w-xl bg-brand-navy/15" />
+              <h1 className="mt-4 font-display text-[1.95rem] font-bold leading-[1.1] tracking-tight text-brand-navy sm:text-[2.6rem] lg:text-[3rem]">
+                You could be sitting on a goldmine of opportunities in <span className="text-brand-blue">MedTech!</span>
               </h1>
-              <p className="mt-4 max-w-xl text-[0.95rem] leading-relaxed text-muted sm:mt-5 sm:text-lg">
-                A live masterclass for life-science, biotech and pharmacy students and graduates. See how the
-                medical-device industry works, which careers your degree can open up, and how to start preparing —
-                from people who have built careers in it.
+              <p className="mt-4 max-w-xl text-base font-semibold leading-relaxed text-ink sm:text-lg">
+                Discover the career possibilities beyond Pharma.
+              </p>
+              <p className="mt-2 max-w-xl text-[0.95rem] leading-relaxed text-muted">
+                <span className="font-semibold text-brand-navy">{MASTERCLASS_EVENT.sessionTitle}</span> — a live
+                masterclass for life-science, biotech and pharmacy students, graduates and professionals.
+              </p>
+              <p className="mt-3 text-sm font-bold tracking-wide text-brand-blue/90">
+                Your Potential. Your Skills. Your MedTech Journey.
               </p>
 
               <dl className="mt-6 grid max-w-xl grid-cols-3 gap-2 sm:mt-7 sm:gap-3">
@@ -356,7 +383,7 @@ export default async function MasterclassLandingPage() {
                     {MASTERCLASS_EVENT.dayDateLabel} · Joining link sent to your email
                   </p>
                 </div>
-                <RegistrationForm registrationOpen={open} />
+                <RegistrationForm registrationOpen={open} pricing={pricing} closed={pricingNow.phase === "closed"} />
               </div>
             </div>
           </div>
@@ -386,17 +413,15 @@ export default async function MasterclassLandingPage() {
         <section className="border-b border-brand-navy/5 px-5 py-16 md:py-24">
           <div className="mx-auto max-w-5xl">
             <SectionHeading
-              eyebrow="What you'll learn"
-              title="A practical first look at the MedTech industry"
-              intro="Grounded in the same industry knowledge our programmes are built on — shaped with MedTech leaders around what they wish new hires already knew."
+              eyebrow="Do you know?"
+              title="Six questions this masterclass answers"
+              intro="Grounded in the industry knowledge our programmes are built on — shaped with MedTech leaders around what they wish new hires already knew."
             />
             <ol className="mt-12 grid gap-4 md:grid-cols-2">
               {LEARN.map((l, i) => (
                 <li
                   key={l.title}
-                  className={`flex gap-4 rounded-msc-lg border border-brand-navy/[0.07] bg-surface p-6 shadow-msc-sm ${
-                    i === LEARN.length - 1 ? "md:col-span-2" : ""
-                  }`}
+                  className="flex gap-4 rounded-msc-lg border border-brand-navy/[0.07] bg-surface p-6 shadow-msc-sm"
                 >
                   <span className="font-display text-2xl font-bold leading-none text-brand-blue/80" aria-hidden>
                     {String(i + 1).padStart(2, "0")}
