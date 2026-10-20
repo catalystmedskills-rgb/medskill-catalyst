@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Image from "next/image";
-import { getPublicCohort, getPublicFaculty, getPublicStories } from "@/src/lib/site-content";
-import { formatCohortDate } from "@/src/lib/cms-format";
 import { MASTERCLASS_EVENT, PRIVACY_POLICY_PATH, SITE_URL, SUPPORT_EMAIL } from "@/src/modules/masterclass/event";
 import { masterclassReadiness, readMasterclassConfig, timeLabel } from "@/src/modules/masterclass/config";
 import { RegistrationForm } from "./registration-form";
@@ -83,33 +81,10 @@ const FALLBACK_STORIES: Story[] = [
   },
 ];
 
+// This release has no CMS, so the page uses the verified content above. When
+// the CMS lands, read faculty, stories and the cohort date from site-content.
 async function loadContent() {
-  const [faculty, stories, cohort] = await Promise.all([getPublicFaculty(), getPublicStories(), getPublicCohort()]);
-
-  const mentors: Mentor[] = faculty.length
-    ? faculty.slice(0, 4).map((f) => ({
-        name: f.fullName,
-        role: f.designation,
-        photo: f.profileImageUrl ?? "",
-        tags: f.expertise.slice(0, 3),
-        bio: f.shortBio ?? "",
-      }))
-    : FALLBACK_MENTORS;
-
-  const published = [...stories.cohortAlumni, ...stories.advancedModuleAlumni].filter((s) => s.testimonial);
-  const storyCards: Story[] = published.length
-    ? published.slice(0, 3).map((s) => ({
-        name: s.fullName,
-        photo: s.profileImageUrl,
-        transition:
-          s.growthHeadline ??
-          [s.previousDesignation, s.currentDesignation].filter(Boolean).join(" → "),
-        quote: s.testimonial!,
-      }))
-    : FALLBACK_STORIES;
-
-  const nextCohort = cohort ? formatCohortDate(cohort.startDate) : "14 November 2026";
-  return { mentors, storyCards, nextCohort };
+  return { mentors: FALLBACK_MENTORS, storyCards: FALLBACK_STORIES, nextCohort: "14 November 2026" };
 }
 
 // ── Icons (thin stroke, inherit currentColor) ────────────────────────
