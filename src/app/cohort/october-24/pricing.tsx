@@ -105,7 +105,7 @@ export function PricingBanner(props: PricingProps & OfferState) {
   if (phase === "paid" && !paymentsReady) {
     return (
       <div role="status" className="rounded-msc-md border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-ink">
-        <strong className="font-semibold">Registration is paused.</strong> Your {holdMinutes}-minute free registration
+        <strong className="font-semibold">Offer expired.</strong> Your {holdMinutes}-minute free registration
         window has ended. Please check back shortly.
       </div>
     );

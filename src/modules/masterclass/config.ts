@@ -231,7 +231,7 @@ export function masterclassReadiness(cfg: MasterclassConfig, now: Date = new Dat
   }
   if (holdEnabled(cfg) && !cfg.razorpayConfigured) {
     warnings.push(
-      "Razorpay keys are not readable by this deployment: visitors whose 30-minute free window has ended see 'Registration is paused' until they are fixed",
+      "Razorpay keys are not readable by this deployment: visitors whose 30-minute free window has ended see 'Offer expired' and cannot register until they are fixed",
     );
   }
   return { open: missing.length === 0, missing, warnings };

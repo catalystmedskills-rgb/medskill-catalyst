@@ -341,7 +341,7 @@ test("the hold runs without Razorpay; after it ends paid registration is paused,
   assert.equal(pricingAt(noRzp, new Date("2026-10-21T08:30:00Z"), first).phase, "paid");
   const r = masterclassReadiness(noRzp, new Date("2026-10-21T08:30:00Z"));
   assert.equal(r.open, true);
-  assert.ok(r.warnings.some((w) => w.includes("Registration is paused")));
+  assert.ok(r.warnings.some((w) => w.includes("Offer expired")));
   assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, CRON_SECRET: "" })), false);
   assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, MASTERCLASS_HOLD_MINUTES: "0" })), false);
 });

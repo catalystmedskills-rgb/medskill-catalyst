@@ -120,7 +120,7 @@ export async function POST(req: Request) {
       return json(
         {
           error:
-            "Registration is paused right now. Your details are saved and we'll contact you as soon as registration reopens.",
+            "Offer expired. Your details are saved and we'll contact you about registering.",
           paused: true,
         },
         503,
