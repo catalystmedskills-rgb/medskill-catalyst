@@ -70,7 +70,8 @@ export default async function MasterclassThankYouPage({
               </div>
 
               <p className="mt-6 text-sm leading-relaxed text-muted">
-                Your masterclass joining details will be sent to your registered email address
+                Your joining link will be shared in our WhatsApp community on the morning of 24 October, and is
+                also sent to your registered email address
                 {summary ? (
                   <>
                     {" "}

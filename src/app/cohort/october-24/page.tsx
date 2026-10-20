@@ -248,11 +248,11 @@ export default async function MasterclassLandingPage() {
     },
     {
       q: "How do I join?",
-      a: "The masterclass runs live on Zoom. After you register, we email your Zoom joining link to the address you give us — keep that email handy for the day.",
+      a: "The masterclass runs live on Zoom. The joining link will be shared in our WhatsApp community on the morning of 24 October, and we also email it to the address you register with — keep it handy for the day.",
     },
     {
       q: "What happens after I register?",
-      a: "You'll see a confirmation screen straight away, and your joining details arrive by email. You'll also be invited to our WhatsApp community for reminders and announcements.",
+      a: "You'll see a confirmation screen straight away, with an invitation to our WhatsApp community for reminders and announcements. Your joining link is shared there on the morning of 24 October, and also sent to you by email.",
     },
     {
       q: "I registered but can't find the email. What should I do?",

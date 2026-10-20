@@ -301,7 +301,7 @@ export function RegistrationForm({
           {...register("email")}
         />
         <p id="mc-email-help" className="mt-1.5 text-xs text-muted">
-          Your Zoom joining link will be sent here.
+          We&rsquo;ll also email your joining link here.
         </p>
         <FieldError id="mc-email-error" message={errors.email?.message} />
       </div>
@@ -464,13 +464,13 @@ export function RegistrationForm({
       <p className="text-center text-xs text-muted">
         {phase === "paid" ? (
           <>
-            Secure payment by Razorpay · Zoom link emailed after payment ·{" "}
+            Secure payment by Razorpay · Joining link shared on WhatsApp and by email after payment ·{" "}
             <a href="/refund-policy" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
               Refund policy
             </a>
           </>
         ) : (
-          "Takes under a minute · Your Zoom link arrives by email"
+          "Takes under a minute · Joining link shared on WhatsApp on 24th morning and by email"
         )}
       </p>
     </form>
