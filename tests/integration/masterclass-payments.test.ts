@@ -60,6 +60,7 @@ function input() {
     phone: `98111${n}0`.slice(0, 10),
     university: "Anna University",
     universitySource: "directory",
+    course: "B.Pharm",
     academicStatus: "GRADUATE",
     consent: true,
     attribution: {},

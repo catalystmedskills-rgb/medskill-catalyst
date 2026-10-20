@@ -126,7 +126,7 @@ export default async function MasterclassAdminPage({
             <tr>
               <th className="px-4 py-3">Registered</th>
               <th className="px-4 py-3">Student</th>
-              <th className="px-4 py-3">University · Status</th>
+              <th className="px-4 py-3">University · Course · Status</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3" />
@@ -149,6 +149,7 @@ export default async function MasterclassAdminPage({
                 <td className="px-4 py-3">
                   <div className="text-brand-navy">{r.university}</div>
                   <div className="text-xs text-muted">
+                    {r.course ? `${r.course}${r.course_source === "other" ? " (typed)" : ""} · ` : ""}
                     {ACADEMIC_STATUS_LABELS[r.academic_status]}
                     {r.university_source === "manual" ? " · typed manually" : ""}
                   </div>

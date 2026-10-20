@@ -5,6 +5,7 @@ import {
   registrationFieldsSchema,
   registrationRequestSchema,
   maskEmail,
+  COURSE_OPTIONS,
   firstNameOf,
   ACADEMIC_STATUS_OPTIONS,
   ACADEMIC_STATUS_LABELS,
@@ -31,6 +32,7 @@ const valid = {
   phone: "98765 43210",
   university: " University of  Delhi ",
   universitySource: "directory",
+  course: "M.Pharm",
   academicStatus: "SEMESTER_5",
   consent: true,
 };
@@ -338,4 +340,20 @@ test("the hold is off without working payments or a signing secret, so nobody is
   assert.ok(masterclassReadiness(noRzp, new Date("2026-10-20T10:00:00Z")).warnings.some((w) => w.includes("personal free hold is off")));
   assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, CRON_SECRET: "" })), false);
   assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, MASTERCLASS_HOLD_MINUTES: "0" })), false);
+});
+
+// ── Course ───────────────────────────────────────────────────────────
+
+test("course is required: a listed course or a typed 'Other' course", () => {
+  assert.ok(COURSE_OPTIONS.includes("B.Pharm") && COURSE_OPTIONS.includes("M.Pharm") && COURSE_OPTIONS.includes("Pharm.D"));
+  const listed = registrationFieldsSchema.safeParse({ ...valid, course: "B.Pharm", courseSource: "list" });
+  assert.equal(listed.success, true);
+  const other = registrationFieldsSchema.safeParse({ ...valid, course: "  B.Sc   Genetics ", courseSource: "other" });
+  assert.equal(other.success, true);
+  assert.equal(other.data!.course, "B.Sc Genetics");
+  for (const bad of ["", " ", "x", "<script>", "a".repeat(101)]) {
+    assert.equal(registrationFieldsSchema.safeParse({ ...valid, course: bad }).success, false, JSON.stringify(bad));
+  }
+  const { course: _c, ...missing } = valid as Record<string, unknown>;
+  assert.equal(registrationFieldsSchema.safeParse(missing).success, false);
 });

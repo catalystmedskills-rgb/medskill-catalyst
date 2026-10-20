@@ -887,6 +887,10 @@ model MasterclassRegistration {
   university           String
   /// "directory" when picked from the AISHE list, "manual" when typed in.
   university_source    String                    @default("manual")
+  /// Degree course, e.g. "B.Pharm". Null on registrations made before the field existed.
+  course               String?
+  /// "list" when picked from the dropdown, "other" when typed in.
+  course_source        String?
   academic_status      MasterclassAcademicStatus
   consent_at           DateTime                  @db.Timestamptz(6)
   consent_text_version String

@@ -86,6 +86,60 @@ export const phoneField = z
     return e164;
   });
 
+/** Degree courses offered in the form, grouped for the dropdown. Anything else uses "Other". */
+export const COURSE_GROUPS: { label: string; courses: string[] }[] = [
+  { label: "Pharmacy", courses: ["B.Pharm", "M.Pharm", "Pharm.D", "D.Pharm"] },
+  {
+    label: "Life sciences",
+    courses: [
+      "B.Sc Life Sciences / Biology",
+      "M.Sc Life Sciences",
+      "B.Sc Microbiology",
+      "M.Sc Microbiology",
+      "B.Sc Biochemistry",
+      "M.Sc Biochemistry",
+      "B.Sc Zoology / Botany",
+    ],
+  },
+  {
+    label: "Biotechnology & biomedical",
+    courses: [
+      "B.Sc Biotechnology",
+      "M.Sc Biotechnology",
+      "B.Tech Biotechnology",
+      "M.Tech Biotechnology",
+      "B.Tech / B.E. Biomedical Engineering",
+      "M.Tech Biomedical Engineering",
+    ],
+  },
+  {
+    label: "Healthcare",
+    courses: [
+      "MBBS",
+      "BDS",
+      "BAMS / BHMS / BUMS",
+      "B.Sc Nursing",
+      "BPT (Physiotherapy)",
+      "B.Sc Allied Health / Medical Lab Technology",
+    ],
+  },
+  { label: "Postgraduate & other", courses: ["MBA (Pharma / Healthcare)", "PhD"] },
+];
+
+export const COURSE_OPTIONS: string[] = COURSE_GROUPS.flatMap((g) => g.courses);
+
+/** The course as saved: a listed course, or what the student typed under "Other". */
+export const courseField = z
+  .string({ error: "Please choose your course." })
+  .transform(collapse)
+  .pipe(
+    z
+      .string()
+      .min(2, "Please choose your course.")
+      .max(100, "Course name is too long.")
+      .regex(/^[\p{L}\p{N}][\p{L}\p{N} .,&/()'’+-]*$/u, "Please use letters and numbers only in the course name."),
+  );
+
 export const universityField = z
   .string({ error: "Please enter your university." })
   .transform(collapse)
@@ -103,6 +157,8 @@ export const registrationFieldsSchema = z.object({
   phone: phoneField,
   university: universityField,
   universitySource: z.enum(["directory", "manual"]).default("manual"),
+  course: courseField,
+  courseSource: z.enum(["list", "other"]).default("list"),
   academicStatus: z.enum(ACADEMIC_STATUSES, { error: "Please choose your current academic status." }),
   consent: z.boolean().refine((v) => v === true, {
     message: "Please agree to be contacted about the masterclass.",

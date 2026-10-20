@@ -8,6 +8,8 @@ import type { z } from "zod";
 import { cn } from "@/src/lib/cn";
 import {
   ACADEMIC_STATUS_OPTIONS,
+  COURSE_GROUPS,
+  COURSE_OPTIONS,
   registrationFieldsSchema,
   type RegistrationFields,
 } from "@/src/modules/masterclass/schema";
@@ -25,7 +27,12 @@ import { UniversityCombobox } from "./university-combobox";
 
 type FormInput = z.input<typeof registrationFieldsSchema>;
 
-const FIELD_ORDER = ["fullName", "email", "phone", "university", "academicStatus", "consent"] as const;
+const FIELD_ORDER = ["fullName", "email", "phone", "university", "course", "academicStatus", "consent"] as const;
+
+const OTHER_COURSE = "__other";
+
+const SELECT_CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233A4D60' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
 const inputClass = (invalid: boolean) =>
   cn(
@@ -75,6 +82,7 @@ export function RegistrationForm({
   const [serverError, setServerError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [honeypot, setHoneypot] = useState("");
+  const [courseIsOther, setCourseIsOther] = useState(false);
 
   const {
     register,
@@ -93,6 +101,8 @@ export function RegistrationForm({
       phone: "",
       university: "",
       universitySource: "manual",
+      course: "",
+      courseSource: "list",
       academicStatus: "" as FormInput["academicStatus"],
       consent: false,
     },
@@ -362,6 +372,79 @@ export function RegistrationForm({
       </div>
 
       <div>
+        <label htmlFor="mc-course" className="mb-1.5 block text-sm font-semibold text-brand-navy">
+          Course
+        </label>
+        <Controller
+          control={control}
+          name="course"
+          render={({ field }) => {
+            const listed = COURSE_OPTIONS.includes(field.value ?? "");
+            const choice = courseIsOther ? OTHER_COURSE : listed ? field.value : "";
+            return (
+              <>
+                <select
+                  id="mc-course"
+                  ref={courseIsOther ? undefined : field.ref}
+                  value={choice}
+                  onBlur={field.onBlur}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === OTHER_COURSE) {
+                      setCourseIsOther(true);
+                      setValue("courseSource", "other");
+                      field.onChange("");
+                    } else {
+                      setCourseIsOther(false);
+                      setValue("courseSource", "list");
+                      field.onChange(v);
+                    }
+                  }}
+                  aria-invalid={errors.course && !courseIsOther ? true : undefined}
+                  aria-describedby={errors.course ? "mc-course-error" : undefined}
+                  aria-required
+                  className={cn(inputClass(Boolean(errors.course) && !courseIsOther), "appearance-none bg-[length:16px] bg-[right_0.9rem_center] bg-no-repeat pr-10")}
+                  style={{ backgroundImage: SELECT_CHEVRON }}
+                >
+                  <option value="" disabled>
+                    Select your course
+                  </option>
+                  {COURSE_GROUPS.map((g) => (
+                    <optgroup key={g.label} label={g.label}>
+                      {g.courses.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  <option value={OTHER_COURSE}>Other (type your course)</option>
+                </select>
+                {courseIsOther && (
+                  <input
+                    id="mc-course-other"
+                    ref={field.ref}
+                    type="text"
+                    autoFocus
+                    maxLength={100}
+                    placeholder="Type your course, e.g. B.Sc Genetics"
+                    aria-label="Your course"
+                    aria-invalid={errors.course ? true : undefined}
+                    aria-describedby={errors.course ? "mc-course-error" : undefined}
+                    value={field.value ?? ""}
+                    onChange={(e) => field.onChange(e.target.value)}
+                    onBlur={field.onBlur}
+                    className={cn(inputClass(Boolean(errors.course)), "mt-2")}
+                  />
+                )}
+              </>
+            );
+          }}
+        />
+        <FieldError id="mc-course-error" message={errors.course?.message} />
+      </div>
+
+      <div>
         <label htmlFor="mc-status" className="mb-1.5 block text-sm font-semibold text-brand-navy">
           Current academic status
         </label>
@@ -371,10 +454,7 @@ export function RegistrationForm({
           aria-describedby={errors.academicStatus ? "mc-status-error" : undefined}
           aria-required
           className={cn(inputClass(Boolean(errors.academicStatus)), "appearance-none bg-[length:16px] bg-[right_0.9rem_center] bg-no-repeat pr-10")}
-          style={{
-            backgroundImage:
-              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%233A4D60' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")",
-          }}
+          style={{ backgroundImage: SELECT_CHEVRON }}
           {...register("academicStatus")}
         >
           <option value="" disabled>

@@ -113,6 +113,8 @@ export async function registerForMasterclass(
         phone: input.phone,
         university: input.university,
         university_source: input.universitySource,
+        course: input.course,
+        course_source: input.courseSource,
         academic_status: input.academicStatus,
         consent_at: new Date(),
         consent_text_version: MASTERCLASS_EVENT.consentTextVersion,
@@ -227,6 +229,7 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
     registration_id: registrationId,
     event: MASTERCLASS_EVENT.key,
     university: input.university,
+    course: input.course,
     academic_status: statusLabel,
     registered_at: new Date().toISOString(),
   };
@@ -261,7 +264,7 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
           email: input.email,
           mobile: input.phone,
           form_type: "masterclass",
-          background: statusLabel,
+          background: `${input.course} · ${statusLabel}`,
           consent: true,
           utm_source: a.utm_source || null,
           utm_medium: a.utm_medium || null,
@@ -272,6 +275,7 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
           extra: {
             source: "Masterclass registration",
             university: input.university,
+            course: input.course,
             academic_status: statusLabel,
             masterclass_2026_10_24: detail,
           } as Prisma.InputJsonValue,
@@ -293,7 +297,7 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
     data: {
       type: ActivityType.SYSTEM,
       lead_id: leadId,
-      body: `Registered for the ${MASTERCLASS_EVENT.title} (${MASTERCLASS_EVENT.dateLabel}) — ${input.university}, ${statusLabel}.`,
+      body: `Registered for the ${MASTERCLASS_EVENT.title} (${MASTERCLASS_EVENT.dateLabel}) — ${input.course}, ${input.university}, ${statusLabel}.`,
     },
   });
 }
