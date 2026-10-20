@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Image from "next/image";
 import { MASTERCLASS_EVENT, PRIVACY_POLICY_PATH, SITE_URL, SUPPORT_EMAIL } from "@/src/modules/masterclass/event";
+import { cookies } from "next/headers";
+import { HOLD_COOKIE, readHoldValue } from "@/src/modules/masterclass/hold";
 import {
+  holdEnabled,
   formatDeadline,
   masterclassReadiness,
   pricingAt,
@@ -210,13 +213,19 @@ function initials(name: string) {
 
 export default async function MasterclassLandingPage() {
   const config = readMasterclassConfig();
-  const pricingNow = pricingAt(config);
+  const holdStart = holdEnabled(config)
+    ? readHoldValue((await cookies()).get(HOLD_COOKIE)?.value, config.holdSecret!)
+    : null;
+  const pricingNow = pricingAt(config, new Date(), holdStart);
   // Registration also closes once the session has started.
   const open = masterclassReadiness(config).open && pricingNow.phase !== "closed";
   const pricing = {
     initialPhase: pricingNow.phase === "paid" ? ("paid" as const) : ("free" as const),
     freeUntilISO: config.freeUntil?.toISOString() ?? null,
     freeUntilLabel: config.freeUntil ? formatDeadline(config.freeUntil) : null,
+    holdEnabled: holdEnabled(config),
+    holdMinutes: config.holdMinutes,
+    holdEndsISO: pricingNow.holdEndsAt?.toISOString() ?? null,
   };
   const time = timeLabel(config);
   const { mentors, storyCards, nextCohort } = await loadContent();

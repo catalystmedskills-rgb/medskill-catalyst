@@ -66,7 +66,8 @@ export function RegistrationForm({
   closed?: boolean;
 }) {
   const router = useRouter();
-  const { phase, msLeft } = useOfferPhase(pricing);
+  const offer = useOfferPhase(pricing);
+  const { phase } = offer;
   const mountedAt = useRef(Date.now());
   const inFlight = useRef(false);
   const started = useRef(false);
@@ -240,7 +241,7 @@ export function RegistrationForm({
       className="space-y-4"
     >
       {registrationOpen && (
-        <PricingBanner {...pricing} phase={phase} msLeft={msLeft} />
+        <PricingBanner {...pricing} {...offer} />
       )}
 
       {!registrationOpen && (

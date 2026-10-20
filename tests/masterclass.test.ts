@@ -117,7 +117,9 @@ const fullEnv = {
 };
 
 test("registration opens only when flag, Zoom link, time and Resend are all valid", () => {
-  assert.deepEqual(masterclassReadiness(readMasterclassConfig(fullEnv)), { open: true, missing: [], warnings: [] });
+  const ready = masterclassReadiness(readMasterclassConfig(fullEnv));
+  assert.equal(ready.open, true);
+  assert.deepEqual(ready.missing, []);
   for (const k of ["MASTERCLASS_REGISTRATION_OPEN", "MASTERCLASS_ZOOM_JOIN_URL", "MASTERCLASS_START_TIME_IST", "RESEND_API_KEY"]) {
     const r = masterclassReadiness(readMasterclassConfig({ ...fullEnv, [k]: "" }));
     assert.equal(r.open, false, `${k} missing should close registration`);
@@ -280,4 +282,60 @@ test("academic status is offered as 1st–8th semester plus graduate; old year v
   }
   // Registrations stored before the change still render a label in admin and email.
   assert.equal(ACADEMIC_STATUS_LABELS.THIRD_YEAR, "Third Year");
+});
+
+// ── Personal 30-minute free hold ─────────────────────────────────────
+
+import { createHoldValue, readHoldValue, cookieFromHeader } from "../src/modules/masterclass/hold";
+import { holdEnabled } from "../src/modules/masterclass/config";
+
+const HOLD_ENV = {
+  ...fullEnv,
+  MASTERCLASS_FREE_UNTIL: "2026-10-22T23:59:00+05:30",
+  RAZORPAY_KEY_ID: "rzp_x",
+  RAZORPAY_KEY_SECRET: "s",
+  CRON_SECRET: "hold-secret",
+};
+
+test("hold cookie is signed: forged, altered or future values are rejected", () => {
+  const start = new Date("2026-10-20T08:00:00Z");
+  const now = new Date("2026-10-20T08:10:00Z");
+  const v = createHoldValue(start, "k1");
+  assert.equal(readHoldValue(v, "k1", now)!.getTime(), start.getTime());
+  assert.equal(readHoldValue(v, "other-key", now), null);
+  const [ms, sig] = v.split(".");
+  assert.equal(readHoldValue(`${Number(ms) + 600_000}.${sig}`, "k1", now), null); // pushed later = longer hold
+  assert.equal(readHoldValue(createHoldValue(new Date("2026-10-20T09:00:00Z"), "k1"), "k1", now), null);
+  assert.equal(readHoldValue("garbage", "k1", now), null);
+  assert.equal(cookieFromHeader("a=1; msc_mc_hold=abc.def; b=2", "msc_mc_hold"), "abc.def");
+});
+
+test("a visitor's free hold lasts 30 minutes from their first visit, then the price is ₹999", () => {
+  const cfg = readMasterclassConfig(HOLD_ENV);
+  assert.equal(holdEnabled(cfg), true);
+  const first = new Date("2026-10-20T08:00:00Z");
+  const at = (m: number) => new Date(first.getTime() + m * 60_000);
+  assert.equal(pricingAt(cfg, at(0), first).phase, "free");
+  assert.equal(pricingAt(cfg, at(29.9), first).phase, "free"); // refreshing keeps the same start
+  assert.equal(pricingAt(cfg, at(29.9), first).holdEndsAt!.toISOString(), "2026-10-20T08:30:00.000Z");
+  const later = pricingAt(cfg, at(30), first);
+  assert.equal(later.phase, "paid");
+  assert.equal(later.amountPaise, 99_900);
+});
+
+test("the festive deadline still ends the offer for everyone, even mid-hold", () => {
+  const cfg = readMasterclassConfig(HOLD_ENV);
+  const hold = new Date("2026-10-22T18:20:00Z"); // 9 minutes before the festive deadline
+  assert.equal(pricingAt(cfg, new Date("2026-10-22T18:28:00Z"), hold).phase, "free");
+  assert.equal(pricingAt(cfg, new Date("2026-10-22T18:29:00Z"), hold).phase, "paid");
+});
+
+test("the hold is off without working payments or a signing secret, so nobody is locked out", () => {
+  const noRzp = readMasterclassConfig({ ...HOLD_ENV, RAZORPAY_KEY_ID: "", RAZORPAY_KEY_SECRET: "" });
+  assert.equal(holdEnabled(noRzp), false);
+  const first = new Date("2026-10-20T08:00:00Z");
+  assert.equal(pricingAt(noRzp, new Date("2026-10-20T10:00:00Z"), first).phase, "free");
+  assert.ok(masterclassReadiness(noRzp, new Date("2026-10-20T10:00:00Z")).warnings.some((w) => w.includes("personal free hold is off")));
+  assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, CRON_SECRET: "" })), false);
+  assert.equal(holdEnabled(readMasterclassConfig({ ...HOLD_ENV, MASTERCLASS_HOLD_MINUTES: "0" })), false);
 });

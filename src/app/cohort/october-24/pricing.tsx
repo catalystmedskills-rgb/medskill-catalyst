@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { MASTERCLASS_EVENT } from "@/src/modules/masterclass/event";
 
 /**
- * Festive-offer pricing. The countdown runs to ONE fixed deadline that is the
- * same for every visitor (MASTERCLASS_FREE_UNTIL on the server), so it never
- * resets and never overstates urgency. The server re-checks the price on
- * submit; this component only displays it.
+ * Festive-offer pricing. Two real limits, both enforced on the server:
+ *   - the festive deadline (MASTERCLASS_FREE_UNTIL), the same for everyone, and
+ *   - this visitor's personal free hold (default 30 minutes from their first
+ *     visit, kept in a signed cookie so refreshing never restarts it).
+ * Whichever ends first sets the countdown. This component only displays the
+ * price; the server re-checks it on submit.
  */
 
 export type OfferPhase = "free" | "paid";
@@ -15,16 +17,50 @@ export type OfferPhase = "free" | "paid";
 export type PricingProps = {
   /** Phase as computed on the server when the page rendered. */
   initialPhase: OfferPhase;
-  /** ISO instant the free offer ends, or null when there is no paid phase. */
+  /** ISO instant the festive offer ends, or null when there is no deadline. */
   freeUntilISO: string | null;
-  /** "Thu, 22 Oct, 11:59 pm IST" */
+  /** "Thu, 22 Oct, 11:59 PM IST" */
   freeUntilLabel: string | null;
+  /** Whether personal holds are running on the server. */
+  holdEnabled: boolean;
+  holdMinutes: number;
+  /** This visitor's hold end, when the server already knew it at render time. */
+  holdEndsISO: string | null;
 };
 
-/** Current phase, flipping from free to paid on the client when the deadline passes. */
-export function useOfferPhase({ initialPhase, freeUntilISO }: PricingProps): { phase: OfferPhase; msLeft: number | null } {
-  const deadline = freeUntilISO ? new Date(freeUntilISO).getTime() : null;
+export type OfferState = {
+  phase: OfferPhase;
+  msLeft: number | null;
+  /** Which limit the countdown is showing. */
+  endsBy: "hold" | "festive" | null;
+  holdEndsAt: Date | null;
+};
+
+const timeIST = (d: Date) =>
+  new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" })
+    .format(d)
+    .replace(/\b(am|pm)\b/, (x) => x.toUpperCase());
+
+/** Current price state, flipping from free to paid on the client when a limit passes. */
+export function useOfferPhase(props: PricingProps): OfferState {
+  const { initialPhase, freeUntilISO, holdEnabled, holdEndsISO } = props;
+  const [holdEnds, setHoldEnds] = useState<number | null>(holdEndsISO ? new Date(holdEndsISO).getTime() : null);
   const [now, setNow] = useState<number | null>(null);
+
+  // First visit: ask the server to start this visitor's hold (sets the signed cookie).
+  useEffect(() => {
+    if (!holdEnabled || holdEnds !== null || initialPhase === "paid") return;
+    fetch("/api/masterclass/hold", { method: "POST" })
+      .then((r) => r.json())
+      .then((d: { holdEndsAt?: string | null }) => {
+        if (d.holdEndsAt) setHoldEnds(new Date(d.holdEndsAt).getTime());
+      })
+      .catch(() => {});
+  }, [holdEnabled, holdEnds, initialPhase]);
+
+  const festive = freeUntilISO ? new Date(freeUntilISO).getTime() : null;
+  const candidates = [holdEnds, festive].filter((x): x is number => x !== null);
+  const deadline = candidates.length ? Math.min(...candidates) : null;
 
   useEffect(() => {
     if (!deadline) return;
@@ -33,9 +69,12 @@ export function useOfferPhase({ initialPhase, freeUntilISO }: PricingProps): { p
     return () => window.clearInterval(t);
   }, [deadline]);
 
-  if (!deadline || now === null) return { phase: initialPhase, msLeft: null };
+  const endsBy = deadline === null ? null : deadline === holdEnds ? "hold" : "festive";
+  const holdEndsAt = holdEnds ? new Date(holdEnds) : null;
+  if (initialPhase === "paid") return { phase: "paid", msLeft: 0, endsBy, holdEndsAt };
+  if (!deadline || now === null) return { phase: initialPhase, msLeft: null, endsBy, holdEndsAt };
   const msLeft = deadline - now;
-  return { phase: msLeft > 0 ? "free" : "paid", msLeft: Math.max(0, msLeft) };
+  return { phase: msLeft > 0 ? "free" : "paid", msLeft: Math.max(0, msLeft), endsBy, holdEndsAt };
 }
 
 function parts(ms: number) {
@@ -47,7 +86,7 @@ function Countdown({ ms }: { ms: number }) {
   const { d, h, m, s } = parts(ms);
   const cells = [
     ...(d > 0 ? [{ v: d, l: d === 1 ? "day" : "days" }] : []),
-    { v: h, l: "hrs" },
+    ...(d > 0 || h > 0 ? [{ v: h, l: "hrs" }] : []),
     { v: m, l: "min" },
     { v: s, l: "sec" },
   ];
@@ -63,8 +102,9 @@ function Countdown({ ms }: { ms: number }) {
   );
 }
 
-export function PricingBanner(props: PricingProps & { phase: OfferPhase; msLeft: number | null }) {
-  const { phase, msLeft, freeUntilLabel } = props;
+export function PricingBanner(props: PricingProps & OfferState) {
+  const { phase, msLeft, freeUntilLabel, endsBy, holdEndsAt, holdMinutes, freeUntilISO } = props;
+  const festiveOver = freeUntilISO ? Date.now() >= new Date(freeUntilISO).getTime() : false;
 
   if (phase === "paid") {
     return (
@@ -73,9 +113,11 @@ export function PricingBanner(props: PricingProps & { phase: OfferPhase; msLeft:
           <span className="text-sm font-semibold text-brand-navy">Registration fee</span>
           <span className="font-display text-2xl font-bold text-brand-navy">{MASTERCLASS_EVENT.priceLabel}</span>
         </div>
-        {freeUntilLabel && (
-          <p className="mt-1 text-xs text-muted">The festive free-registration offer ended on {freeUntilLabel}.</p>
-        )}
+        <p className="mt-1 text-xs text-muted">
+          {festiveOver && freeUntilLabel
+            ? `The festive free-registration offer ended on ${freeUntilLabel}.`
+            : `Your ${holdMinutes}-minute free registration window has ended.`}
+        </p>
       </div>
     );
   }
@@ -84,7 +126,9 @@ export function PricingBanner(props: PricingProps & { phase: OfferPhase; msLeft:
     <div className="rounded-msc-md border border-success/25 bg-success/5 px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div>
-          <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-success">Festive offer</p>
+          <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-success">
+            {endsBy === "hold" ? "Festive offer · reserved for you" : "Festive offer"}
+          </p>
           <p className="mt-0.5 flex items-baseline gap-2">
             <span className="text-base font-semibold text-muted line-through decoration-2" aria-label={`Regular price ${MASTERCLASS_EVENT.priceLabel}`}>
               {MASTERCLASS_EVENT.priceLabel}
@@ -94,11 +138,20 @@ export function PricingBanner(props: PricingProps & { phase: OfferPhase; msLeft:
         </div>
         {msLeft !== null && msLeft > 0 && <Countdown ms={msLeft} />}
       </div>
-      {freeUntilLabel && (
+      {endsBy === "hold" && holdEndsAt ? (
         <p className="mt-1.5 text-xs text-muted">
-          Free registration ends <strong className="font-semibold text-ink">{freeUntilLabel}</strong>. After that it&rsquo;s{" "}
-          {MASTERCLASS_EVENT.priceLabel}.
+          Your free registration is held for you until{" "}
+          <strong className="font-semibold text-ink">{timeIST(holdEndsAt)} IST</strong> ({holdMinutes} minutes from your
+          first visit). After that it&rsquo;s {MASTERCLASS_EVENT.priceLabel}.
+          {freeUntilLabel && <> The festive offer itself ends {freeUntilLabel}.</>}
         </p>
+      ) : (
+        freeUntilLabel && (
+          <p className="mt-1.5 text-xs text-muted">
+            Free registration ends <strong className="font-semibold text-ink">{freeUntilLabel}</strong>. After that
+            it&rsquo;s {MASTERCLASS_EVENT.priceLabel}.
+          </p>
+        )
       )}
     </div>
   );

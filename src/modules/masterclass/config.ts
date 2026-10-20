@@ -14,6 +14,8 @@
  *   MASTERCLASS_FREE_UNTIL              ISO time with offset; free before it,
  *                                       ₹999 via Razorpay after it. Unset = free.
  *   RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET  existing Razorpay integration
+ *   MASTERCLASS_HOLD_MINUTES            personal free hold per visitor (default 30; 0 = off)
+ *   MASTERCLASS_HOLD_SECRET             signs the hold cookie (falls back to CRON_SECRET)
  *   RESEND_API_KEY                      existing Resend integration
  *
  * Registrations stay closed until the flag is on AND the Zoom link, start time
@@ -38,6 +40,9 @@ export type MasterclassConfig = {
   /** End of the festive free-registration offer; null = always free. */
   freeUntil: Date | null;
   razorpayConfigured: boolean;
+  /** Personal hold length; 0 = no personal hold. */
+  holdMinutes: number;
+  holdSecret: string | null;
 };
 
 export type MasterclassReadiness = {
@@ -121,7 +126,25 @@ export function readMasterclassConfig(env: Env = process.env): MasterclassConfig
     resendConfigured: Boolean(clean(env.RESEND_API_KEY) || clean(env.Resend_Api_key)),
     freeUntil: parseFreeUntil(env.MASTERCLASS_FREE_UNTIL),
     razorpayConfigured: Boolean(clean(env.RAZORPAY_KEY_ID) && clean(env.RAZORPAY_KEY_SECRET)),
+    holdMinutes: parseHoldMinutes(env.MASTERCLASS_HOLD_MINUTES),
+    holdSecret: clean(env.MASTERCLASS_HOLD_SECRET) ?? clean(env.CRON_SECRET),
   };
+}
+
+function parseHoldMinutes(v: string | undefined): number {
+  const t = (v ?? "").trim();
+  if (t === "") return 30;
+  return /^\d{1,4}$/.test(t) ? Number(t) : 30;
+}
+
+/**
+ * The personal 30-minute hold only runs when it can be enforced honestly: a
+ * secret to sign it, and working payments for when it ends. Without Razorpay,
+ * ending a hold would lock the visitor out rather than ask them to pay, so the
+ * hold switches off and the shared deadline alone decides the price.
+ */
+export function holdEnabled(cfg: MasterclassConfig): boolean {
+  return cfg.holdMinutes > 0 && Boolean(cfg.holdSecret) && cfg.razorpayConfigured;
 }
 
 /**
@@ -145,17 +168,28 @@ export type PricingPhase = {
   phase: "free" | "paid" | "closed";
   amountPaise: number;
   freeUntil: Date | null;
+  /** When this visitor's personal free hold ends (null when holds are off). */
+  holdEndsAt: Date | null;
 };
 
 /**
  * What a registration costs right now. One real deadline for everyone — never
  * a per-visitor timer — so the countdown on the page is always the truth.
  */
-export function pricingAt(cfg: MasterclassConfig, now: Date = new Date()): PricingPhase {
+export function pricingAt(
+  cfg: MasterclassConfig,
+  now: Date = new Date(),
+  holdStartedAt: Date | null = null,
+): PricingPhase {
+  const base = { freeUntil: cfg.freeUntil };
+  const holdEndsAt =
+    holdEnabled(cfg) && holdStartedAt ? new Date(holdStartedAt.getTime() + cfg.holdMinutes * 60_000) : null;
   const startsAt = masterclassStartsAt(cfg);
-  if (startsAt && now >= startsAt) return { phase: "closed", amountPaise: 0, freeUntil: cfg.freeUntil };
-  if (!cfg.freeUntil || now < cfg.freeUntil) return { phase: "free", amountPaise: 0, freeUntil: cfg.freeUntil };
-  return { phase: "paid", amountPaise: MASTERCLASS_EVENT.pricePaise, freeUntil: cfg.freeUntil };
+  if (startsAt && now >= startsAt) return { ...base, phase: "closed", amountPaise: 0, holdEndsAt };
+  const offerOver = Boolean(cfg.freeUntil && now >= cfg.freeUntil);
+  const holdOver = Boolean(holdEndsAt && now >= holdEndsAt);
+  if (offerOver || holdOver) return { ...base, phase: "paid", amountPaise: MASTERCLASS_EVENT.pricePaise, holdEndsAt };
+  return { ...base, phase: "free", amountPaise: 0, holdEndsAt };
 }
 
 /** "Thu, 22 Oct, 11:59 PM IST" */
@@ -186,6 +220,13 @@ export function masterclassReadiness(cfg: MasterclassConfig, now: Date = new Dat
     const message = "Razorpay keys (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET) are not readable by this deployment";
     if (pricingAt(cfg, now).phase === "paid") missing.push(`${message}, so paid registration is paused`);
     else warnings.push(`${message}: registration will pause when the free offer ends unless they are fixed`);
+  }
+  if (cfg.holdMinutes > 0 && !holdEnabled(cfg)) {
+    warnings.push(
+      cfg.razorpayConfigured
+        ? "The personal free hold is off because no signing secret is set (MASTERCLASS_HOLD_SECRET or CRON_SECRET)"
+        : "The personal free hold is off until the Razorpay keys are readable; registration stays free until the festive deadline",
+    );
   }
   return { open: missing.length === 0, missing, warnings };
 }

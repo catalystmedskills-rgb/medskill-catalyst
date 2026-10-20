@@ -48,8 +48,8 @@ const { registrationRequestSchema } = await import("@/src/modules/masterclass/sc
 const verifyRoute = await import("@/src/app/api/masterclass/verify/route");
 const webhookRoute = await import("@/src/app/api/webhooks/razorpay/route");
 
-const PAID = { phase: "paid" as const, amountPaise: 99_900, freeUntil: new Date("2026-10-22T18:29:00Z") };
-const FREE = { phase: "free" as const, amountPaise: 0, freeUntil: null };
+const PAID = { phase: "paid" as const, amountPaise: 99_900, freeUntil: new Date("2026-10-22T18:29:00Z"), holdEndsAt: null };
+const FREE = { phase: "free" as const, amountPaise: 0, freeUntil: null, holdEndsAt: null };
 
 let phoneSeq = 0;
 function input() {

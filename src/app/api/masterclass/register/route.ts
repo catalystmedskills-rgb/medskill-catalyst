@@ -3,7 +3,8 @@ import { z } from "zod";
 import { clientKey, consumeRequestAllowance } from "@/src/lib/rate-limit";
 import { sendMetaEvent, metaContextFromRequest } from "@/src/lib/meta-capi";
 import { registrationRequestSchema } from "@/src/modules/masterclass/schema";
-import { readMasterclassConfig, masterclassReadiness, pricingAt } from "@/src/modules/masterclass/config";
+import { readMasterclassConfig, masterclassReadiness, pricingAt, holdEnabled } from "@/src/modules/masterclass/config";
+import { HOLD_COOKIE, cookieFromHeader, readHoldValue } from "@/src/modules/masterclass/hold";
 import { MASTERCLASS_EVENT } from "@/src/modules/masterclass/event";
 import {
   registerForMasterclass,
@@ -50,8 +51,14 @@ export async function POST(req: Request) {
     return json({ error: "Registrations for this masterclass are not open yet. Please check back soon." }, 503);
   }
 
-  // Price is decided here, on the server clock, never by the page's countdown.
-  const pricing = pricingAt(config);
+  // Price is decided here, on the server clock and the signed hold cookie,
+  // never by the page's countdown. No valid hold cookie (blocked cookies, or a
+  // first request straight to the API) counts as a hold starting now.
+  const now = new Date();
+  const holdStart = holdEnabled(config)
+    ? (readHoldValue(cookieFromHeader(req.headers.get("cookie"), HOLD_COOKIE), config.holdSecret!, now) ?? now)
+    : null;
+  const pricing = pricingAt(config, now, holdStart);
   if (pricing.phase === "closed") {
     return json({ error: "Registration has closed — the masterclass has already started." }, 410);
   }
