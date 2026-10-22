@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { MASTERCLASS_EVENT } from "@/src/modules/masterclass/event";
 
 /**
- * Festive-offer pricing. Two real limits, both enforced on the server:
- *   - the festive deadline (MASTERCLASS_FREE_UNTIL), the same for everyone, and
- *   - this visitor's personal free hold (default 30 minutes from their first
- *     visit, kept in a signed cookie so refreshing never restarts it).
- * Whichever ends first sets the countdown. This component only displays the
- * price; the server re-checks it on submit.
+ * Offer pricing and countdown. The server decides the price on submit; this
+ * component only displays it. Three modes, in order of precedence:
+ *   - a server-enforced limit (festive deadline MASTERCLASS_FREE_UNTIL and/or a
+ *     personal hold kept in a signed cookie) when either is configured, or
+ *   - otherwise a display-only countdown of `displayTimerMinutes` that starts
+ *     on each visit and restarts at zero; registration stays free throughout.
+ *     (Chosen by the owner on 2026-10-22 so returning visitors can always
+ *     register while payments are unavailable.)
  */
 
 export type OfferPhase = "free" | "paid";
@@ -28,6 +30,8 @@ export type PricingProps = {
   holdEndsISO: string | null;
   /** Whether a ₹999 payment can be taken right now (Razorpay usable). */
   paymentsReady: boolean;
+  /** Display-only countdown length used when no server limit is configured. */
+  displayTimerMinutes: number;
 };
 
 export type OfferState = {
@@ -40,9 +44,21 @@ export type OfferState = {
 
 /** Current price state, flipping from free to paid on the client when a limit passes. */
 export function useOfferPhase(props: PricingProps): OfferState {
-  const { initialPhase, freeUntilISO, holdEnabled, holdEndsISO } = props;
+  const { initialPhase, freeUntilISO, holdEnabled, holdEndsISO, displayTimerMinutes } = props;
   const [holdEnds, setHoldEnds] = useState<number | null>(holdEndsISO ? new Date(holdEndsISO).getTime() : null);
   const [now, setNow] = useState<number | null>(null);
+  const [visitStart, setVisitStart] = useState<number | null>(null);
+  const displayOnly = !holdEnabled && !freeUntilISO && displayTimerMinutes > 0 && initialPhase === "free";
+
+  // Display-only mode: count down from the start of this visit, restarting at zero.
+  useEffect(() => {
+    if (!displayOnly) return;
+    const start = Date.now();
+    setVisitStart(start);
+    setNow(start);
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [displayOnly]);
 
   // First visit: ask the server to start this visitor's hold (sets the signed cookie).
   useEffect(() => {
@@ -65,6 +81,13 @@ export function useOfferPhase(props: PricingProps): OfferState {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [deadline]);
+
+  if (displayOnly) {
+    if (visitStart === null || now === null) return { phase: "free", msLeft: null, endsBy: null, holdEndsAt: null };
+    const period = displayTimerMinutes * 60_000;
+    const msLeft = period - ((now - visitStart) % period);
+    return { phase: "free", msLeft, endsBy: null, holdEndsAt: null };
+  }
 
   const endsBy = deadline === null ? null : deadline === holdEnds ? "hold" : "festive";
   const holdEndsAt = holdEnds ? new Date(holdEnds) : null;

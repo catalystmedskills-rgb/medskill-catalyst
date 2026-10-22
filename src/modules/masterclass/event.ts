@@ -21,6 +21,8 @@ export const MASTERCLASS_EVENT = {
   /** Regular price once the festive free offer ends. */
   pricePaise: 99_900,
   priceLabel: "₹999",
+  /** Length of the on-page offer countdown. Display only; restarts each visit. */
+  offerTimerMinutes: 30,
   /** Bump whenever the consent sentence on the form changes. */
   consentTextVersion: "masterclass-2026-10-24-v1",
 } as const;

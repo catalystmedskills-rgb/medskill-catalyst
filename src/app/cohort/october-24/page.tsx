@@ -227,6 +227,7 @@ export default async function MasterclassLandingPage() {
     holdEnabled: holdEnabled(config),
     paymentsReady: paidRegistrationAvailable(config),
     holdMinutes: config.holdMinutes,
+    displayTimerMinutes: MASTERCLASS_EVENT.offerTimerMinutes,
     holdEndsISO: pricingNow.holdEndsAt?.toISOString() ?? null,
   };
   const time = timeLabel(config);
