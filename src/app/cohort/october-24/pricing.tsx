@@ -87,14 +87,25 @@ function Countdown({ ms }: { ms: number }) {
     { v: m, l: "min" },
     { v: s, l: "sec" },
   ];
+  const urgent = d === 0 && h === 0 && m < 5;
   return (
-    <div className="flex gap-1.5" aria-hidden>
-      {cells.map((c) => (
-        <span key={c.l} className="flex min-w-[2.6rem] flex-col items-center rounded-msc bg-brand-navy px-1.5 py-1 text-white">
-          <span className="font-display text-base font-bold tabular-nums leading-tight">{String(c.v).padStart(2, "0")}</span>
-          <span className="text-[0.58rem] font-semibold uppercase tracking-wide text-white/70">{c.l}</span>
-        </span>
-      ))}
+    <div className="flex flex-col items-center gap-1">
+      <span className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-danger">Offer ends in</span>
+      <div className="flex items-center gap-1" aria-hidden>
+        {cells.map((c, i) => (
+          <span key={c.l} className="flex items-center gap-1">
+            {i > 0 && <span className="font-display text-xl font-bold text-danger">:</span>}
+            <span
+              className={`flex min-w-[3.1rem] flex-col items-center rounded-msc bg-gradient-to-b from-danger to-[#7A1710] px-1.5 py-1.5 text-white shadow-[0_6px_16px_-6px_rgba(180,35,24,0.6)] ${
+                urgent ? "motion-safe:animate-pulse" : ""
+              }`}
+            >
+              <span className="font-display text-2xl font-bold tabular-nums leading-none">{String(c.v).padStart(2, "0")}</span>
+              <span className="mt-0.5 text-[0.55rem] font-semibold uppercase tracking-wide text-white/80">{c.l}</span>
+            </span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -124,15 +135,24 @@ export function PricingBanner(props: PricingProps & OfferState) {
   }
 
   return (
-    <div className="rounded-msc-md border border-success/25 bg-success/5 px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+    <div className="relative overflow-hidden rounded-msc-lg border-2 border-danger/40 bg-gradient-to-br from-[#FFF4E5] via-white to-[#FFE9E6] px-4 py-4 shadow-[0_10px_30px_-12px_rgba(180,35,24,0.45)]">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div>
-          <p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-success">Festive offer</p>
-          <p className="mt-0.5 flex items-baseline gap-2">
-            <span className="text-base font-semibold text-muted line-through decoration-2" aria-label={`Regular price ${MASTERCLASS_EVENT.priceLabel}`}>
+          <p className="inline-flex items-center gap-1.5 rounded-pill bg-danger px-2.5 py-1 text-[0.66rem] font-bold uppercase tracking-[0.12em] text-white">
+            <span className="relative flex h-2 w-2" aria-hidden>
+              <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-75 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+            </span>
+            Limited-time offer
+          </p>
+          <p className="mt-2 flex items-baseline gap-2.5">
+            <span
+              className="text-xl font-semibold text-muted line-through decoration-danger decoration-[3px]"
+              aria-label={`Regular price ${MASTERCLASS_EVENT.priceLabel}`}
+            >
               {MASTERCLASS_EVENT.priceLabel}
             </span>
-            <span className="font-display text-2xl font-bold text-brand-navy">FREE</span>
+            <span className="font-display text-4xl font-black tracking-tight text-success">FREE</span>
           </p>
         </div>
         {msLeft !== null && msLeft > 0 && <Countdown ms={msLeft} />}

@@ -4,7 +4,7 @@ import { db } from "@/src/lib/db";
 import { MasterclassEmailStatus } from "@/src/generated/prisma/enums";
 import { MASTERCLASS_EVENT } from "@/src/modules/masterclass/event";
 import { masterclassReadiness, readMasterclassConfig } from "@/src/modules/masterclass/config";
-import { ACADEMIC_STATUS_LABELS } from "@/src/modules/masterclass/schema";
+import { ACADEMIC_STATUS_LABELS, JOIN_REASON_LABELS } from "@/src/modules/masterclass/schema";
 import { formatDate, leadCode } from "../ui";
 import { retryConfirmationAction } from "./actions";
 
@@ -126,7 +126,7 @@ export default async function MasterclassAdminPage({
             <tr>
               <th className="px-4 py-3">Registered</th>
               <th className="px-4 py-3">Student</th>
-              <th className="px-4 py-3">University · Course · Status</th>
+              <th className="px-4 py-3">College · Course · Status · City · Reasons</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3" />
@@ -152,7 +152,15 @@ export default async function MasterclassAdminPage({
                     {r.course ? `${r.course}${r.course_source === "other" ? " (typed)" : ""} · ` : ""}
                     {ACADEMIC_STATUS_LABELS[r.academic_status]}
                     {r.university_source === "manual" ? " · typed manually" : ""}
+                    {r.city ? ` · ${r.city}` : ""}
                   </div>
+                  {r.join_reasons.length > 0 && (
+                    <ul className="mt-1 list-disc pl-4 text-xs text-muted">
+                      {r.join_reasons.map((j) => (
+                        <li key={j}>{JOIN_REASON_LABELS[j as keyof typeof JOIN_REASON_LABELS] ?? j}</li>
+                      ))}
+                    </ul>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-xs text-muted">
                   {[r.utm_source, r.utm_medium, r.utm_campaign].filter(Boolean).join(" / ") || "direct"}

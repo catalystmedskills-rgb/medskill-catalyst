@@ -15,7 +15,7 @@ import { readMasterclassConfig, timeLabel, type MasterclassConfig, type PricingP
 import { masterclassConfirmationEmail } from "./email-template";
 import { isPermanentEmailFailure, MAX_EMAIL_ATTEMPTS, nextAttemptAt, STALE_CLAIM_MS } from "./delivery";
 import { leadSourceFor } from "./attribution";
-import { ACADEMIC_STATUS_LABELS, firstNameOf, type RegistrationRequest } from "./schema";
+import { ACADEMIC_STATUS_LABELS, JOIN_REASON_LABELS, firstNameOf, type RegistrationRequest } from "./schema";
 
 /**
  * Masterclass registration + confirmation email.
@@ -115,6 +115,8 @@ export async function registerForMasterclass(
         university_source: input.universitySource,
         course: input.course,
         course_source: input.courseSource,
+        city: input.city,
+        join_reasons: input.joinReasons,
         academic_status: input.academicStatus,
         consent_at: new Date(),
         consent_text_version: MASTERCLASS_EVENT.consentTextVersion,
@@ -231,6 +233,8 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
     university: input.university,
     course: input.course,
     academic_status: statusLabel,
+    city: input.city,
+    join_reasons: input.joinReasons.map((r) => JOIN_REASON_LABELS[r]),
     registered_at: new Date().toISOString(),
   };
 
@@ -277,6 +281,7 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
             university: input.university,
             course: input.course,
             academic_status: statusLabel,
+            city: input.city,
             masterclass_2026_10_24: detail,
           } as Prisma.InputJsonValue,
         },
@@ -297,7 +302,7 @@ async function linkToLead(registrationId: string, input: RegistrationRequest): P
     data: {
       type: ActivityType.SYSTEM,
       lead_id: leadId,
-      body: `Registered for the ${MASTERCLASS_EVENT.title} (${MASTERCLASS_EVENT.dateLabel}) — ${input.course}, ${input.university}, ${statusLabel}.`,
+      body: `Registered for the ${MASTERCLASS_EVENT.title} (${MASTERCLASS_EVENT.dateLabel}) — ${input.course}, ${input.university}, ${statusLabel}, ${input.city}. Reasons: ${input.joinReasons.map((r) => JOIN_REASON_LABELS[r]).join("; ")}.`,
     },
   });
 }

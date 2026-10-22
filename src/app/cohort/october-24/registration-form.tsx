@@ -8,6 +8,7 @@ import type { z } from "zod";
 import { cn } from "@/src/lib/cn";
 import {
   ACADEMIC_STATUS_OPTIONS,
+  JOIN_REASON_OPTIONS,
   COURSE_GROUPS,
   COURSE_OPTIONS,
   registrationFieldsSchema,
@@ -27,7 +28,17 @@ import { UniversityCombobox } from "./university-combobox";
 
 type FormInput = z.input<typeof registrationFieldsSchema>;
 
-const FIELD_ORDER = ["fullName", "email", "phone", "university", "course", "academicStatus", "consent"] as const;
+const FIELD_ORDER = [
+  "fullName",
+  "email",
+  "phone",
+  "university",
+  "course",
+  "academicStatus",
+  "city",
+  "joinReasons",
+  "consent",
+] as const;
 
 const OTHER_COURSE = "__other";
 
@@ -103,6 +114,8 @@ export function RegistrationForm({
       universitySource: "manual",
       course: "",
       courseSource: "list",
+      city: "",
+      joinReasons: [],
       academicStatus: "" as FormInput["academicStatus"],
       consent: false,
     },
@@ -349,7 +362,7 @@ export function RegistrationForm({
 
       <div>
         <label htmlFor="mc-university" className="mb-1.5 block text-sm font-semibold text-brand-navy">
-          University name
+          College name
         </label>
         <Controller
           control={control}
@@ -469,6 +482,51 @@ export function RegistrationForm({
         </select>
         <FieldError id="mc-status-error" message={errors.academicStatus?.message} />
       </div>
+
+      <div>
+        <label htmlFor="mc-city" className="mb-1.5 block text-sm font-semibold text-brand-navy">
+          City
+        </label>
+        <input
+          id="mc-city"
+          type="text"
+          autoComplete="address-level2"
+          autoCapitalize="words"
+          enterKeyHint="next"
+          placeholder="e.g. Chennai"
+          maxLength={60}
+          aria-invalid={errors.city ? true : undefined}
+          aria-describedby={errors.city ? "mc-city-error" : undefined}
+          aria-required
+          className={inputClass(Boolean(errors.city))}
+          {...register("city")}
+        />
+        <FieldError id="mc-city-error" message={errors.city?.message} />
+      </div>
+
+      <fieldset aria-describedby={errors.joinReasons ? "mc-reasons-error" : "mc-reasons-help"}>
+        <legend className="mb-1 block text-sm font-semibold text-brand-navy">Reason to join this workshop</legend>
+        <p id="mc-reasons-help" className="mb-2 text-xs text-muted">
+          Choose all that apply.
+        </p>
+        <div className="space-y-2">
+          {JOIN_REASON_OPTIONS.map((o) => (
+            <label
+              key={o.value}
+              className="flex cursor-pointer items-start gap-3 rounded-msc-md border border-brand-navy/10 bg-surface px-3.5 py-3 text-sm text-ink transition has-[:checked]:border-brand-blue has-[:checked]:bg-brand-pale/50"
+            >
+              <input
+                type="checkbox"
+                value={o.value}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brand-blue"
+                {...register("joinReasons")}
+              />
+              <span>{o.label}</span>
+            </label>
+          ))}
+        </div>
+        <FieldError id="mc-reasons-error" message={errors.joinReasons?.message ?? errors.joinReasons?.root?.message} />
+      </fieldset>
 
       {/* Honeypot: invisible to people and assistive tech, irresistible to bots. */}
       <div aria-hidden className="absolute -left-[9999px] h-px w-px overflow-hidden">

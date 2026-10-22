@@ -34,6 +34,8 @@ const valid = {
   universitySource: "directory",
   course: "M.Pharm",
   academicStatus: "SEMESTER_5",
+  city: "Chennai",
+  joinReasons: ["WORK_IN_MEDTECH", "KNOW_INDUSTRY"],
   consent: true,
 };
 
@@ -359,5 +361,29 @@ test("course is required: a listed course or a typed 'Other' course", () => {
     assert.equal(registrationFieldsSchema.safeParse({ ...valid, course: bad }).success, false, JSON.stringify(bad));
   }
   const { course: _c, ...missing } = valid as Record<string, unknown>;
+  assert.equal(registrationFieldsSchema.safeParse(missing).success, false);
+});
+
+// ── City and reasons to join ────────────────────────────────────────
+
+test("city is required and letters only", () => {
+  const ok = registrationFieldsSchema.safeParse({ ...valid, city: "  navi   mumbai " });
+  assert.equal(ok.success, true);
+  assert.equal(ok.data!.city, "navi mumbai");
+  for (const bad of ["", "a", "12345", "<b>Pune</b>"]) {
+    assert.equal(registrationFieldsSchema.safeParse({ ...valid, city: bad }).success, false, bad);
+  }
+});
+
+test("reasons: pick any or all of the three, at least one, saved in a stable order", () => {
+  const all = registrationFieldsSchema.safeParse({
+    ...valid,
+    joinReasons: ["ROLES_OPPORTUNITIES", "KNOW_INDUSTRY", "WORK_IN_MEDTECH", "KNOW_INDUSTRY"],
+  });
+  assert.equal(all.success, true);
+  assert.deepEqual(all.data!.joinReasons, ["KNOW_INDUSTRY", "WORK_IN_MEDTECH", "ROLES_OPPORTUNITIES"]);
+  assert.equal(registrationFieldsSchema.safeParse({ ...valid, joinReasons: [] }).success, false);
+  assert.equal(registrationFieldsSchema.safeParse({ ...valid, joinReasons: ["SOMETHING_ELSE"] }).success, false);
+  const { joinReasons: _j, ...missing } = valid as Record<string, unknown>;
   assert.equal(registrationFieldsSchema.safeParse(missing).success, false);
 });

@@ -62,6 +62,8 @@ function input() {
     universitySource: "directory",
     course: "B.Pharm",
     academicStatus: "GRADUATE",
+    city: "Pune",
+    joinReasons: ["ROLES_OPPORTUNITIES"],
     consent: true,
     attribution: {},
   });

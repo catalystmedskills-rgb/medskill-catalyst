@@ -208,7 +208,7 @@ export function UniversityCombobox({
 
   const hint =
     source === "directory"
-      ? "Selected from the university list."
+      ? "Selected from the list."
       : keptAsTyped && value.trim()
         ? `We'll save “${value.trim()}” exactly as typed.`
         : loadState === "error"
@@ -233,7 +233,7 @@ export function UniversityCombobox({
         spellCheck={false}
         enterKeyHint="next"
         disabled={disabled}
-        placeholder="Search your university"
+        placeholder="Search or type your college"
         value={value}
         maxLength={200}
         onFocus={() => {

@@ -891,6 +891,10 @@ model MasterclassRegistration {
   course               String?
   /// "list" when picked from the dropdown, "other" when typed in.
   course_source        String?
+  /// City the student lives in. Null on registrations made before the field existed.
+  city                 String?
+  /// Reasons for joining, e.g. {KNOW_INDUSTRY,WORK_IN_MEDTECH}. Empty on older registrations.
+  join_reasons         String[]                  @default([])
   academic_status      MasterclassAcademicStatus
   consent_at           DateTime                  @db.Timestamptz(6)
   consent_text_version String

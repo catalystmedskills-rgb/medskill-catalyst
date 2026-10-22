@@ -141,16 +141,47 @@ export const courseField = z
   );
 
 export const universityField = z
-  .string({ error: "Please enter your university." })
+  .string({ error: "Please enter your college." })
   .transform(collapse)
   .pipe(
     z
       .string()
-      .min(2, "Please enter your university.")
-      .max(200, "University name is too long."),
+      .min(2, "Please enter your college.")
+      .max(200, "College name is too long."),
   );
 
 /** The fields the student fills in. Shared by the form and the API. */
+export const cityField = z
+  .string({ error: "Please enter your city." })
+  .transform(collapse)
+  .pipe(
+    z
+      .string()
+      .min(2, "Please enter your city.")
+      .max(60, "City name is too long.")
+      .regex(/^[\p{L}][\p{L} .'’-]*$/u, "Please use letters only in the city name."),
+  );
+
+/** Why the student is joining. Any combination; at least one. */
+export const JOIN_REASONS = ["KNOW_INDUSTRY", "WORK_IN_MEDTECH", "ROLES_OPPORTUNITIES"] as const;
+export type JoinReason = (typeof JOIN_REASONS)[number];
+
+export const JOIN_REASON_OPTIONS: { value: JoinReason; label: string }[] = [
+  { value: "KNOW_INDUSTRY", label: "To know about medtech as an industry" },
+  { value: "WORK_IN_MEDTECH", label: "Interested in working in medtech" },
+  { value: "ROLES_OPPORTUNITIES", label: "Understand roles and opportunities in medtech" },
+];
+
+export const JOIN_REASON_LABELS = Object.fromEntries(JOIN_REASON_OPTIONS.map((o) => [o.value, o.label])) as Record<
+  JoinReason,
+  string
+>;
+
+export const joinReasonsField = z
+  .array(z.enum(JOIN_REASONS), { error: "Please choose at least one reason." })
+  .min(1, "Please choose at least one reason.")
+  .transform((v) => JOIN_REASONS.filter((r) => v.includes(r)));
+
 export const registrationFieldsSchema = z.object({
   fullName: fullNameField,
   email: emailField,
@@ -160,6 +191,8 @@ export const registrationFieldsSchema = z.object({
   course: courseField,
   courseSource: z.enum(["list", "other"]).default("list"),
   academicStatus: z.enum(ACADEMIC_STATUSES, { error: "Please choose your current academic status." }),
+  city: cityField,
+  joinReasons: joinReasonsField,
   consent: z.boolean().refine((v) => v === true, {
     message: "Please agree to be contacted about the masterclass.",
   }),
