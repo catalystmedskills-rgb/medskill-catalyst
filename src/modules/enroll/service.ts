@@ -20,7 +20,7 @@ import type { EnrollmentApplication } from "./schemas";
 
 export class EnrollError extends Error {}
 
-const WHATSAPP_URL = "https://wa.me/919759249395";
+const WHATSAPP_URL = "https://wa.me/918800665154";
 
 /**
  * The final, GST-inclusive amount the customer pays, in paise. This is the

@@ -37,7 +37,7 @@ export function CareersFooter() {
                 <IconMail className="h-4 w-4 shrink-0" /> info@medskillscatalyst.com
               </a>
               <a
-                href="https://wa.me/919759249395"
+                href="https://wa.me/918800665154"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 hover:text-white transition-colors"
@@ -81,7 +81,7 @@ export function CareersFooter() {
                 Contact Us
               </a>
               <a
-                href="https://wa.me/919759249395"
+                href="https://wa.me/918800665154"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-white transition-colors"

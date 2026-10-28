@@ -1,7 +1,7 @@
 import { Card, CardContent } from "@/src/components/ui/card";
 import { SiteHeader } from "@/src/components/site-header";
 
-const WHATSAPP_URL = "https://wa.me/919759249395";
+const WHATSAPP_URL = "https://wa.me/918800665154";
 
 export function LinkProblem({ title, body }: { title: string; body: string }) {
   return (

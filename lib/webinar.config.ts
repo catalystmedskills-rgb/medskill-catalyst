@@ -21,7 +21,7 @@ export const WEBINAR = {
 
   // TODO: Replace with real destinations before launch.
   whatsappGroupUrl: "https://chat.whatsapp.com/[PLACEHOLDER_GROUP_INVITE]",
-  whatsappContactUrl: "https://wa.me/919759249395",
+  whatsappContactUrl: "https://wa.me/918800665154",
   leadMagnetUrl: "/downloads/medtech-career-guide.pdf", // [PLACEHOLDER asset]
   leadMagnetTitle: "MedTech Career Transition Guide (28-page PDF)",
 
